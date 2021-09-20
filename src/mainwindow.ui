@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>810</width>
+    <height>520</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>810</width>
+    <height>520</height>
+   </size>
+  </property>
+  <property name="maximumSize">
+   <size>
+    <width>810</width>
+    <height>520</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>MainWindow</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <widget class="QListWidget" name="listWidget">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>10</y>
+      <width>791</width>
+      <height>474</height>
+     </rect>
+    </property>
+    <property name="minimumSize">
+     <size>
+      <width>791</width>
+      <height>474</height>
+     </size>
+    </property>
+    <property name="maximumSize">
+     <size>
+      <width>791</width>
+      <height>474</height>
+     </size>
+    </property>
+    <property name="styleSheet">
+     <string notr="true"/>
+    </property>
+   </widget>
+  </widget>
+  <widget class="QMenuBar" name="menubar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>810</width>
+     <height>18</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menu">
+    <property name="title">
+     <string>Справка</string>
+    </property>
+    <addaction name="actionAboutProg"/>
+    <addaction name="separator"/>
+    <addaction name="action_callback"/>
+   </widget>
+   <widget class="QMenu" name="menu_2">
+    <property name="title">
+     <string>Операции</string>
+    </property>
+    <addaction name="action_read_device"/>
+    <addaction name="action_enable_device"/>
+    <addaction name="action_disable_device"/>
+    <addaction name="action_reconnect_device"/>
+    <addaction name="separator"/>
+    <addaction name="action_start_utm"/>
+    <addaction name="action_stop_utm"/>
+    <addaction name="separator"/>
+    <addaction name="action_change_device"/>
+    <addaction name="separator"/>
+    <addaction name="action_settings"/>
+   </widget>
+   <widget class="QMenu" name="menu_3">
+    <property name="title">
+     <string>Установка</string>
+    </property>
+    <addaction name="action_install_utm"/>
+    <addaction name="action_uninstall_utm"/>
+   </widget>
+   <widget class="QMenu" name="menu_4">
+    <property name="title">
+     <string>Файл</string>
+    </property>
+    <addaction name="action_exit"/>
+   </widget>
+   <addaction name="menu_4"/>
+   <addaction name="menu_2"/>
+   <addaction name="menu_3"/>
+   <addaction name="menu"/>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionAboutProg">
+   <property name="text">
+    <string>О программе</string>
+   </property>
+  </action>
+  <action name="action_read_device">
+   <property name="text">
+    <string>Прочитать устройства</string>
+   </property>
+  </action>
+  <action name="action_enable_device">
+   <property name="text">
+    <string>Включить устройство</string>
+   </property>
+  </action>
+  <action name="action_install_utm">
+   <property name="text">
+    <string>Установить УТМ</string>
+   </property>
+  </action>
+  <action name="action_uninstall_utm">
+   <property name="text">
+    <string>Удалить УТМ</string>
+   </property>
+  </action>
+  <action name="action_callback">
+   <property name="text">
+    <string>Связь с разработчиком</string>
+   </property>
+  </action>
+  <action name="action_exit">
+   <property name="text">
+    <string>Выход</string>
+   </property>
+  </action>
+  <action name="action_disable_device">
+   <property name="text">
+    <string>Отключить устройство</string>
+   </property>
+  </action>
+  <action name="action_reconnect_device">
+   <property name="text">
+    <string>Переподключить устройства</string>
+   </property>
+  </action>
+  <action name="action_start_utm">
+   <property name="text">
+    <string>Запустить УТМ</string>
+   </property>
+  </action>
+  <action name="action_stop_utm">
+   <property name="text">
+    <string>Остановить УТМ</string>
+   </property>
+  </action>
+  <action name="action_change_device">
+   <property name="text">
+    <string>Поменять порядок устройств</string>
+   </property>
+  </action>
+  <action name="action_settings">
+   <property name="text">
+    <string>Настройки</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

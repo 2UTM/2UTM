@@ -1,0 +1,1 @@
+%~dp0utm.exe stop %1

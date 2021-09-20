@@ -1,0 +1,1 @@
+%~dp0utm.exe start %1
