@@ -42,8 +42,11 @@
 Справка -> Связь с разработчиком - связь со мной, ссылка на гитхаб и почта
 
 
-Несколько картинок\n
+Несколько картинок
+
 ![Иллюстрация к проекту](https://github.com/2UTM/2UTM/blob/main/2UTM_screen/2utm-1.jpg)
+![Иллюстрация к проекту](https://github.com/2UTM/2UTM/blob/main/2UTM_screen/2utm-2.jpg)
+![Иллюстрация к проекту](https://github.com/2UTM/2UTM/blob/main/2UTM_screen/2utm-3.jpg)
 
 
 Спасибо за внимание!
@@ -53,4 +56,5 @@ PS
 
 
 Ссылка на гитхаб - https://github.com/2UTM/2UTM\n
+
 Почта - 2UTM.dev@gmail.com
