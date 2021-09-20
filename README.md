@@ -43,7 +43,7 @@
 
 
 Несколько картинок
-![Image alt](https://github.com/2UTM/2UTM/2UTM_screen/2utm-1.jpg)
+![Иллюстрация к проекту](https://github.com/jon/coolproject/raw/master/image/image.png)
 
 
 Спасибо за внимание!
