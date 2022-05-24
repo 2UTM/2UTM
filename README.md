@@ -5,7 +5,7 @@
 По ошибкам и вопросам просьба писать тут:  
 GitHub - https://github.com/2UTM/2UTM/issues  
 Почта - 2UTM.dev@gmail.com  
-Telegrem - @regnorr  
+Telegram - @regnorr  
 
 
 Изменения в 1.1  
