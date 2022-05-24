@@ -2,89 +2,20 @@
 #include "ui_mainwindow.h"
 #include "logging.h"
 
-// Структура нужна для вывода полей сертификата, взял из примера
-std::pair<X500Dn::RdnId::Type, std::string> rdnIds[] = {
-    std::make_pair(X500Dn::RdnId::commonName, "commonName"),
-    std::make_pair(X500Dn::RdnId::surname, "surname"),
-    std::make_pair(X500Dn::RdnId::givenName, "givenName"),
-    std::make_pair(X500Dn::RdnId::title, "title"),
-    std::make_pair(X500Dn::RdnId::pseudonym, "pseudonym"),
-    std::make_pair(X500Dn::RdnId::emailAddress, "emailAddress"),
-    std::make_pair(X500Dn::RdnId::countryName, "countryName"),
-    std::make_pair(X500Dn::RdnId::localityName, "localityName"),
-    std::make_pair(X500Dn::RdnId::stateOrProvinceName, "stateOrProvinceName"),
-    std::make_pair(X500Dn::RdnId::organization, "organization"),
-    std::make_pair(X500Dn::RdnId::organizationalUnit, "organizationalUnit"),
-    std::make_pair(X500Dn::RdnId::street, "street"),
-    std::make_pair(X500Dn::RdnId::ogrn, "ogrn"),
-    std::make_pair(X500Dn::RdnId::ogrnip, "ogrnip"),
-    std::make_pair(X500Dn::RdnId::snils, "snils"),
-    std::make_pair(X500Dn::RdnId::inn, "inn")
-};
-
-
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+    ui->textEditInfoCert->setReadOnly(true);
+    setFixedSize(382, 518);
+    setWindowFlags(Qt::Dialog);
+    setWindowFlags(this->windowFlags() & ~Qt::WindowContextHelpButtonHint);
 
-    MainWindow::show_device();
+    readDevice(lenVector);
 
-    // Читаем из конфига параметры старта
-    QFile file_read(QApplication::applicationDirPath() + "/start.ini");
-    if (!file_read.open(QIODevice::ReadOnly))
-    {
-        qWarning(logWarning()) << "Не удалось открыть файл start.ini, функция не ответила и завершилась по таймауту";
-    }
-    else
-    {
-        while(!file_read.atEnd())
-        {
-            QString str = file_read.readLine();
-            str.replace("\r", "");
-            str.replace("\n", "");
-            lst_start.append(str);
-        }
-        file_read.close();
-        qInfo(logInfo()) << "Получили данные из start.ini";
-
-        if (lst_start[2] == "false")
-        {
-            show();
-        }
-        if (lst_start[0] == "true")
-        {
-            MainWindow::start_th();
-        }
-    }
-
-    // Инициализируем иконку трея, устанавливаем иконку из набора системных иконок,а также задаем всплывающую подсказку
-    p_trayIcon = new QSystemTrayIcon();
-    p_trayIcon->setIcon(QIcon(QApplication::applicationDirPath() + "/image/2UTM.ico"));
-    p_trayIcon->setToolTip("2UTM");
-
-    // После чего создаем контекстное меню из трех пунктов
-    QMenu *menu = new QMenu(this);
-    QAction *showWindow = new QAction("Показать 2UTM", this);
-    QAction *hideWindow = new QAction("Скрыть 2UTM", this);
-    QAction *quitAction = new QAction("Выйти из 2UTM", this);
-
-    // подключаем сигналы нажатий на пункты меню к соответсвующим слотам.
-    connect(showWindow, &QAction::triggered,this,&QMainWindow::show);
-    connect(hideWindow, &QAction::triggered,this,&QMainWindow::hide);
-    connect(quitAction, &QAction::triggered, this, &MainWindow::close);
-    menu->addAction(showWindow);
-    menu->addAction(hideWindow);
-    menu->addAction(quitAction);
-
-    // Устанавливаем контекстное меню на иконку и показываем иконку приложения в трее
-    p_trayIcon->setContextMenu(menu);
-    p_trayIcon->show();
-    //Также подключаем сигнал нажатия на иконку к обработчику данного нажатия
-    connect(p_trayIcon, &QSystemTrayIcon::activated, this, &MainWindow::iconActivated);
-
-    qInfo(logInfo()) << "Приложение запущено";
+    // Соединяем сигнал itemClicked со слотом showCertInfo, при выборе токена вывод инфы о нем
+    connect(ui->listWidgetToken, &QListWidget::itemClicked, this, &MainWindow::showCertInfo);
 }
 
 MainWindow::~MainWindow()
@@ -92,641 +23,540 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
-// Нажатие на трей
-void MainWindow::iconActivated(QSystemTrayIcon::ActivationReason reason)
+// Прочитать устройства
+void MainWindow::readDevice(uint &lenVector)
 {
-    this->setFocus(Qt::FocusReason(reason));
-    switch (reason)
+    ui->listWidgetToken->clear();
+    mapAttrReaderNameReader.clear();
+    QVector<QString> vecAttrReader;
+    QVector<QString> vecReader;
+
+    Control::getSerialNumberDevice(mainSerialNumberDevice);
+
+    // Получаем контекст
+    int result = Control::getContextCard(hContext);
+    if (result)
     {
-        case QSystemTrayIcon::Trigger:
-            if(!this->isVisible())
-            {
-                this->show();
-            }
-            else
-            {
-                this->hide();
-            }
-        break;
-    default:
-        break;
+        qWarning(logWarning()) << "Ошибка getContextCard, код ошибки - " + QString::number(result);
+        ui->statusbar->showMessage("Ошибка getContextCard, код ошибки - " + QString::number(result));
+        return;
+    }
+
+    // Получаем ридеры
+    result = Control::listDevice(vecReader, hContext);
+    if (result == 1)
+    {
+        qInfo(logInfo()) << "Устройства не найдены";
+        ui->statusbar->showMessage("Устройства не найдены");
+        ui->textEditInfoCert->clear();
+        return;
+    }
+    if (result)
+    {
+        qWarning(logWarning()) << "Ошибка listDevice, код ошибки - " + QString::number(result);
+        ui->statusbar->showMessage("Ошибка listDevice, код ошибки - " + QString::number(result));
+        return;
+    }
+
+    // Получаем атрибуты ридеров
+    result = Control::getAttrReader(vecAttrReader, hContext, vecReader);
+    if (result)
+    {
+        qWarning(logWarning()) << "Ошибка getAttrReader, код ошибки - " + QString::number(result);
+        ui->statusbar->showMessage("Ошибка getAttrReader, код ошибки - " + QString::number(result));
+        return;
+    }
+
+    // Заполняем list widget
+    lenVector = vecReader.size();
+    for (int i = 0; i < vecReader.size(); ++i)
+    {
+        QListWidgetItem *item = new QListWidgetItem();
+        item->setIcon(QIcon("./image/token.png"));
+        item->setText("          " + vecReader[i]);
+        ui->listWidgetToken->insertItem(i, item);
+    }
+
+    // Заполянем мап атрибутов и ридеров
+    for (int i = 0; i < vecReader.size(); ++i)
+    {
+        mapAttrReaderNameReader[vecAttrReader[i]] = vecReader[i];
+    }
+    mainVecReader = vecReader;
+    mainVecAttrReader = vecAttrReader;
+
+    ui->statusbar->showMessage("Выполнено");
+}
+
+// Метод запуска потока считывания сертификатов
+void MainWindow::startThreadReadCert(uint numberDevice, uint lenVector)
+{
+    //Создание объектов рабочего класа и потока
+    threadReadCert = new QThread();
+    control = new Control();
+    control->setParametrReadCert(numberDevice, lenVector);
+    control->moveToThread(threadReadCert);
+
+    //Соединение слотов и сигналов с потоками
+    connect(threadReadCert, &QThread::started, control, &Control::readCert);
+
+    connect(control, &Control::signalErrorReadCert, threadReadCert, &QThread::quit);
+    connect(control, &Control::signalErrorReadCert, control, &Control::deleteLater);
+    connect(control, &Control::signalErrorReadCert, this, &MainWindow::slotErrorReadCert);
+
+    connect(threadReadCert, &QThread::finished, threadReadCert, &QThread::deleteLater);
+
+    threadReadCert->start();
+}
+
+// Меню выход
+void MainWindow::on_actionExit_triggered()
+{
+    QApplication::exit(0);
+}
+
+// Перечитать устройства
+void MainWindow::on_actionReadDevice_triggered()
+{
+    Control::getSerialNumberDevice(mainSerialNumberDevice);
+    readDevice(lenVector);
+}
+
+// Показать инфу о сертификатах на выбранных токене
+void MainWindow::showCertInfo(QListWidgetItem *item)
+{   
+    loader = new Loader(this);
+    loader->setAttribute(Qt::WA_ShowModal, true);
+    loader->show();
+
+    nubmerDevice = ui->listWidgetToken->currentRow();
+    nameDevice = item->text();
+    startThreadReadCert(nubmerDevice, lenVector);
+}
+
+// Слот получения статуса считывания сертификата
+void MainWindow::slotErrorReadCert(QString resultCert, int codeError)
+{
+    // Серийный номер устройства
+    QString serNumber = resultCert.mid(31, 10);
+
+    for (QMap<QString, QString>::iterator i = mapAttrReaderNameReader.begin(); i != mapAttrReaderNameReader.end();)
+    {
+        if (i.value() == nameDevice.trimmed())
+        {
+            resultCert = "Атрибут считывателя: " + i.key() + "\n\n" + resultCert;
+            resultCert = "Имя считывателя: " + i.value() + "\n" + resultCert;
+            break;
+        }
+        ++i;
+    }
+
+    if (codeError == 1)
+    {
+        ui->listWidgetToken->clear();
+        ui->textEditInfoCert->clear();
+        qWarning(logWarning()) << "Ошибка readCert, код ошибки - " + QString::number(codeError) + ", устройства не найдены";
+        ui->statusbar->showMessage("Устройства не найдены");
+
+        loader->close();
+        delete loader;
+    }
+    else if (codeError == 2)
+    {
+        readDevice(lenVector);
+        ui->textEditInfoCert->clear();
+        ui->statusbar->showMessage("Устройства перечитаны");
+
+        loader->close();
+        delete loader;
+    }
+    else if (codeError == 0)
+    {
+        ui->textEditInfoCert->clear();
+        ui->textEditInfoCert->insertPlainText(resultCert);
+        ui->statusbar->showMessage("Выполнено");
+
+        loader->close();
+        delete loader;
     }
 }
 
-// Метод, который обрабатывает событие закрытия окна приложения
-void MainWindow::closeEvent(QCloseEvent * event)
+// Слот получения сигнала об успешной установке
+void MainWindow::slotSuccesInstall()
 {
-    if(this->isVisible())
+    activateWindow();
+    readDevice(lenVector);
+}
+
+// Слот получения статуса запуска УТМ
+void MainWindow::slotStartUTM(QString result, int codeError)
+{
+    if (codeError == 0)
     {
-        event->ignore();
-        this->hide();
-        QSystemTrayIcon::MessageIcon icon = QSystemTrayIcon::MessageIcon(QSystemTrayIcon::Information);
-        p_trayIcon->showMessage("2UTM", ("Приложение свернуто в панель задач."), icon, 2000);
+        ui->statusbar->showMessage(result);
+        readDevice(lenVector);
+        loader->close();
+        delete loader;
+    }
+    else if (codeError == 3)
+    {
+        qWarning(logWarning()) << result;
+        QMessageBox::warning(this, "Ошибка", result);
+        readDevice(lenVector);
+        ui->statusbar->showMessage("Ошибка");
+        loader->close();
+        delete loader;
     }
     else
     {
-        MainWindow::exit_prog();
+        qWarning(logWarning()) << result;
+        QMessageBox::warning(this, "Ошибка", result);
+        readDevice(lenVector);
+        ui->statusbar->showMessage(result);
+        loader->close();
+        delete loader;
     }
 }
 
-// Метод создания потока запуска утм
-void MainWindow::start_th()
+// Слот получения статуса остановки УТМ
+void MainWindow::slotStopUTM(QString result, int codeError)
 {
-    //Создание объектов рабочего класа и потока
-    thread_start = new QThread(this);
-    start = new Start();
-    start->set_settings(QApplication::applicationDirPath(), device[0]);
-    start->moveToThread(thread_start);
-
-    //Соединение слотов и сигналов с потоками
-    connect(thread_start, &QThread::started, start, &Start::start_utm);
-
-    connect(start, &Start::signalStartEnd, thread_start, &QThread::quit);
-    connect(start, &Start::signalStartEnd, start, &Start::deleteLater);
-    connect(start, &Start::signalStartEnd, this, &MainWindow::after_start);
-
-    connect(start, &Start::signalStartErrorEnd, thread_start, &QThread::quit);
-    connect(start, &Start::signalStartErrorEnd, start, &Start::deleteLater);
-    connect(start, &Start::signalStartErrorEnd, this, &MainWindow::after_error_start);
-
-    connect(start, &Start::signalAutoStartErrorEnd, thread_start, &QThread::quit);
-    connect(start, &Start::signalAutoStartErrorEnd, start, &Start::deleteLater);
-    connect(start, &Start::signalAutoStartErrorEnd, this, &MainWindow::after_auto_start);
-
-    connect(thread_start, &QThread::finished, thread_start, &QThread::deleteLater);
-
-    if (QFile("./config.ini").exists() && device.size() > 1)
+    if (codeError == 0)
     {
-        thread_start->start();
-        ui->statusbar->showMessage("Запускаем УТМы...");
+        ui->statusbar->showMessage(result);
+        readDevice(lenVector);
+        loader->close();
+        delete loader;
     }
-}
-
-// Метод создания потока остановки утм
-void MainWindow::stop_th()
-{
-    //Создание объектов рабочего класа и потока
-    thread_stop = new QThread(this);
-    stop = new Stop();
-    stop->moveToThread(thread_stop);
-
-    //Соединение слотов и сигналов с потоками
-    connect(thread_stop, &QThread::started, stop, &Stop::stop_utm);
-
-    connect(stop, &Stop::signalStopEnd, thread_stop, &QThread::quit);
-    connect(stop, &Stop::signalStopEnd, stop, &Stop::deleteLater);
-    connect(stop, &Stop::signalStopEnd, this, &MainWindow::after_stop);
-
-    connect(stop, &Stop::signalStopErrorEnd, thread_stop, &QThread::quit);
-    connect(stop, &Stop::signalStopErrorEnd, stop, &Stop::deleteLater);
-    connect(stop, &Stop::signalStopErrorEnd, this, &MainWindow::after_error_stop);
-
-    connect(thread_stop, &QThread::finished, thread_stop, &QThread::deleteLater);
-
-    thread_stop->start();
-}
-
-// Метод создания потока удаления утм
-void MainWindow::uninstall_th()
-{
-    //Создание объектов рабочего класа и потока
-    thread_uninstall = new QThread(this);
-    uninstall = new Uninstall();
-    uninstall->moveToThread(thread_uninstall);
-
-    //Соединение слотов и сигналов с потоками
-    connect(thread_uninstall, &QThread::started, uninstall, &Uninstall::uninstall_utm);
-
-    connect(uninstall, &Uninstall::signalUninstallEnd, thread_uninstall, &QThread::quit);
-    connect(uninstall, &Uninstall::signalUninstallEnd, uninstall, &Uninstall::deleteLater);
-    connect(uninstall, &Uninstall::signalUninstallEnd, this, &MainWindow::after_uninstall);
-
-    connect(uninstall, &Uninstall::signalUninstallErrorEnd, thread_uninstall, &QThread::quit);
-    connect(uninstall, &Uninstall::signalUninstallErrorEnd, uninstall, &Uninstall::deleteLater);
-    connect(uninstall, &Uninstall::signalUninstallErrorEnd, this, &MainWindow::after_error_uninstall);
-
-    connect(thread_uninstall, &QThread::finished, thread_uninstall, &QThread::deleteLater);
-
-    thread_uninstall->start();
-}
-
-// Метод создания потока переподключения устройств
-void MainWindow::reconnect_th()
-{
-    //Создание объектов рабочего класа и потока
-    thread_reconnect = new QThread(this);
-    reconnect = new Reconnect();
-    reconnect->set_settings(QApplication::applicationDirPath());
-    reconnect->moveToThread(thread_reconnect);
-
-    //Соединение слотов и сигналов с потоками
-    connect(thread_reconnect, &QThread::started, reconnect, &Reconnect::reconnect_device);
-
-    connect(reconnect, &Reconnect::signalReconnectEnd, thread_reconnect, &QThread::quit);
-    connect(reconnect, &Reconnect::signalReconnectEnd, reconnect, &Reconnect::deleteLater);
-    connect(reconnect, &Reconnect::signalReconnectEnd, this, &MainWindow::after_reconnect);
-
-    connect(reconnect, &Reconnect::signalReconnectErrorEnd, thread_reconnect, &QThread::quit);
-    connect(reconnect, &Reconnect::signalReconnectErrorEnd, reconnect, &Reconnect::deleteLater);
-    connect(reconnect, &Reconnect::signalReconnectErrorEnd, this, &MainWindow::after_error_reconnect);
-
-    connect(thread_reconnect, &QThread::finished, thread_reconnect, &QThread::deleteLater);
-
-    thread_reconnect->start();
-}
-
-// Метод получения детей устройства
-QString MainWindow::device_child(WCHAR DeviceInstanceID[])
-{
-    QString result;
-
-    CONFIGRET CMResult = CR_SUCCESS;
-
-    DEVNODE ParentDeviceNode = 0;
-    CMResult = CM_Locate_DevNodeW((PDEVINST) &ParentDeviceNode, DeviceInstanceID, CM_LOCATE_DEVNODE_NORMAL); // дескриптор родительского экземпляра
-
-    if (CMResult == CR_SUCCESS)
+    else if (codeError == 3)
     {
-        DEVINST FirstChildDeviceNode = 0;
-        CMResult = CM_Get_Child((PDEVINST) &FirstChildDeviceNode, ParentDeviceNode, 0x0); // Получаем первый дочерний элемент
-
-        if (CMResult == CR_SUCCESS)
-        {
-            DEVINST SecondChildDeviceNode = 0;
-            CMResult = CM_Get_Sibling((PDEVINST) &SecondChildDeviceNode, FirstChildDeviceNode, 0x0); // Получаем второй дочерний элементы
-
-            if (CMResult == CR_SUCCESS)
-            {
-                ULONG ChildDBuffLength = 255;
-                WCHAR * ChildInstanceIDBuff = (WCHAR *) malloc(ChildDBuffLength); // выделяем память для пути до дочернего элемента
-                CMResult = CM_Get_Device_IDW(SecondChildDeviceNode, ChildInstanceIDBuff, ChildDBuffLength, 0x0); // получаем путь до дочернего элемента
-
-                if (CMResult == CR_SUCCESS)
-                {
-                    result = QString::fromWCharArray(ChildInstanceIDBuff);
-                    message_statusbar = "Выполнено";
-                }
-
-                free(ChildInstanceIDBuff);
-            }
-        }
+        qWarning(logWarning()) << result;
+        QMessageBox::warning(this, "Ошибка", result);
+        readDevice(lenVector);
+        ui->statusbar->showMessage("Ошибка");
+        loader->close();
+        delete loader;
     }
     else
     {
-        message_statusbar = "Не удалось получить дочерние элементы устройств";
-        qWarning(logWarning()) << "Не удалось получить дочерние элементы устройств";
+        qWarning(logWarning()) << result;
+        QMessageBox::warning(this, "Ошибка", result);
+        readDevice(lenVector);
+        ui->statusbar->showMessage(result);
+        loader->close();
+        delete loader;
     }
-    return result;
 }
 
-// Метод получения инфы об устройствах
-void MainWindow::show_device()
+// Слот получения статуса удаления УТМ
+void MainWindow::slotDeleteUTM(QString result, int codeError)
 {
-    // Конструктор и деструктор от рутокенов
-    rutoken::pkicore::initialize(".");
-    SCOPE_EXIT() {
-        rutoken::pkicore::deinitialize();
-    };
-
-    ui->listWidget->clear();
-    owner_device.clear();
-
-    // Результаты
-    QVector<QString> vec_device;
-    QVector<QString> vec_info_device;
-    QVector<QString> vec_device_off;
-    QString res_str;
-
-    // Счетчик
-    int count = 0;
-
-    // Получаем пути до экземпляров устройств
-    process.start("devcon status *VID_0A89*");
-    if(!process.waitForFinished(60000) )
+    if (codeError == 0)
     {
-        ui->statusbar->showMessage("Не удалось получить список устройств");
-        qWarning(logWarning()) << "Не удалось получить список устройств";
+        ui->statusbar->showMessage(result);
+        readDevice(lenVector);
+        loader->close();
+        delete loader;
+    }
+    else if (codeError == 3)
+    {
+        qWarning(logWarning()) << result;
+        QMessageBox::warning(this, "Ошибка", result);
+        readDevice(lenVector);
+        ui->statusbar->showMessage("Ошибка");
+        loader->close();
+        delete loader;
     }
     else
     {
-        QString r;
-        r = process.readAllStandardOutput();
-        QStringList list_device_parent = r.split("\n");
-        if (list_device_parent.size() != 0)
+        qWarning(logWarning()) << result;
+        QMessageBox::warning(this, "Ошибка", result);
+        readDevice(lenVector);
+        ui->statusbar->showMessage(result);
+        loader->close();
+        delete loader;
+    }
+}
+
+// Установить УТМы
+void MainWindow::on_actionInstallUTM_triggered()
+{
+    // Если есть установленные УТМы, прерываем
+    QDir dir;
+    dir.cd("C:/");
+    dir.setFilter(QDir::Dirs);
+    QFileInfoList list = dir.entryInfoList();
+    for (int i = 0; i < list.size(); ++i)
+    {
+        QFileInfo fileInfo = list[i];
+        if (fileInfo.filePath() == "C:/2UTM")
         {
-            for (int i = 0; i < list_device_parent.size(); ++i)
+            continue;
+        }
+        if (fileInfo.filePath().contains("UTM"))
+        {
+            qWarning(logWarning()) << "Ошибка начала установки, удалите уже существующие УТМы";
+            QMessageBox::warning(this, "Ошибка", "Ошибка начала установки, удалите уже существующие УТМы!");
+            return;
+        }
+    }
+
+    installGui = new InstallGUI();
+    connect(installGui, &InstallGUI::signalSuccesInstall, this, &MainWindow::slotSuccesInstall);
+    installGui->setParametrs(mapAttrReaderNameReader, hContext, mainSerialNumberDevice);
+    installGui->exec();
+    delete installGui;
+}
+
+// Меню показать все ридеры вне контекста
+void MainWindow::on_actionShowReaderNotContext_triggered()
+{
+    showReaderNotContext = new ShowReaderNotContext(this);
+    showReaderNotContext->exec();
+    delete showReaderNotContext;
+}
+
+// Запустить УТМ
+void MainWindow::on_actionStartUTM_triggered()
+{
+    // Если нет установленных УТМ, прерываем
+    bool deleteStatus = true;
+    QDir dir;
+    dir.cd("C:/");
+    dir.setFilter(QDir::Dirs);
+    QFileInfoList list = dir.entryInfoList();
+    for (int i = 0; i < list.size(); ++i)
+    {
+        QFileInfo fileInfo = list[i];
+        if (fileInfo.filePath() == "C:/2UTM")
+        {
+            continue;
+        }
+        if (fileInfo.filePath().contains("UTM"))
+        {
+            deleteStatus = false;
+        }
+    }
+    if (deleteStatus)
+    {
+        qWarning(logWarning()) << "Ошибка начала запуска, нет установленных УТМ";
+        QMessageBox::warning(this, "Ошибка", "Ошибка начала запуска, нет установленных УТМ!");
+        return;
+    }
+
+    readDevice(lenVector);
+    countResult = 0;
+
+    // Если конфиг не совпадает с существующим мапом ридеров, прерываем
+    // Чтение из конфига
+    QSettings setting("config.ini", QSettings::IniFormat);
+    QStringList keysList = setting.allKeys(); // ключи из конфига
+
+    if (keysList.empty())
+    {
+        qWarning(logWarning()) << "Не найден файл конфига, запуск прерван";
+        QMessageBox::warning(this, "Ошибка", "Не найден файл конфига, запуск прерван!");
+        return;
+    }
+
+    // Делаем вектора из конфига из каждой группы
+    QVector<QString> vectorName;
+    QVector<QString> vectorAttr;
+    QVector<QString> vectorSerialNumberDevice;
+
+    // Заполняем их
+    for (int i = 0; i < keysList.size(); i += 4)
+    {
+        vectorAttr.push_back(setting.value(keysList[i]).toString());
+        vectorName.push_back(setting.value(keysList[i + 1]).toString());
+        vectorSerialNumberDevice.push_back(setting.value(keysList[i + 3]).toString());
+    }
+
+    // Делаем мап для сравнения
+    QMap<QString, QString> configMap;
+    for (int i = 0; i < vectorAttr.size(); ++i)
+    {
+        configMap[vectorAttr[i]] = vectorName[i];
+    }
+
+    // Если длина мапа из кофига больше, чем есть реально, прерываем
+    if (configMap.size() > mapAttrReaderNameReader.size())
+    {
+        qWarning(logWarning()) << "Существующие ридеры меньше, чем в конфиге, запуск прерван";
+        QMessageBox::warning(this, "Ошибка", "Существующие ридеры меньше, чем в конфиге, запуск прерван!");
+        return;
+    }
+    // Сверяем серийные номера, если не совпадают, прерываем
+    for (int i = 0; i < vectorSerialNumberDevice.size(); ++i)
+    {
+        for (int j = 0; j < mainSerialNumberDevice.size(); ++j)
+        {
+            if (vectorSerialNumberDevice[i] == mainSerialNumberDevice[j])
             {
-                if (list_device_parent[i].contains("disabled"))
-                    vec_device_off.append(list_device_parent[i - 1]);
+                ++countResult;
             }
         }
+    }
+    if (vectorSerialNumberDevice.size() != countResult)
+    {
+        qWarning(logWarning()) << "Рутокены не совпадают с конфигом, запуск прерван";
+        QMessageBox::warning(this, "Ошибка", "Рутокены не совпадают с конфигом, запуск прерван!");
+        return;
+    }
 
-        // Получаем список подключенных устройств
-        std::vector<Pkcs11Device> devices = Pkcs11Device::enumerate();
+    loader = new Loader(this);
+    loader->setAttribute(Qt::WA_ShowModal, true);
+    loader->show();
 
-        // Выводим устройства
-        if (devices.size() != 0)
+    //Создание объектов рабочего класа и потока
+    threadStartUTM = new QThread();
+    startUTM = new StartUTM();
+    startUTM->setParametrsStart(hContext, mainSerialNumberDevice, mainVecAttrReader, mainVecReader);
+    startUTM->moveToThread(threadStartUTM);
+
+    //Соединение слотов и сигналов с потоками
+    connect(threadStartUTM, &QThread::started, startUTM, &StartUTM::startUtm);
+
+    connect(startUTM, &StartUTM::signalStartUTM, threadStartUTM, &QThread::quit);
+    connect(startUTM, &StartUTM::signalStartUTM, startUTM, &StartUTM::deleteLater);
+    connect(startUTM, &StartUTM::signalStartUTM, this, &MainWindow::slotStartUTM);
+
+    connect(threadStartUTM, &QThread::finished, threadStartUTM, &QThread::deleteLater);
+
+    threadStartUTM->start();
+}
+
+// Остановить УТМы
+void MainWindow::on_actionStopUTM_triggered()
+{
+    // Чтение из конфига
+    QSettings setting("config.ini", QSettings::IniFormat);
+    QStringList keysList = setting.allKeys(); // ключи из конфига
+
+    if (keysList.empty())
+    {
+        qWarning(logWarning()) << "Не найден файл конфига, запуск прерван";
+        QMessageBox::warning(this, "Ошибка", "Не найден файл конфига, запуск прерван!");
+        return;
+    }
+
+    // Делаем вектора из конфига из каждой группы
+    QVector<QString> vectorAttr;
+
+    // Заполняем их
+    for (int i = 0; i < keysList.size(); i += 4)
+    {
+        vectorAttr.push_back(setting.value(keysList[i]).toString());
+    }
+
+    loader = new Loader(this);
+    loader->setAttribute(Qt::WA_ShowModal, true);
+    loader->show();
+
+    //Создание объектов рабочего класа и потока
+    threadStopUTM = new QThread();
+    stopUTM = new StopUTM();
+    stopUTM->setParametrsStopUTM(vectorAttr);
+    stopUTM->moveToThread(threadStopUTM);
+
+    //Соединение слотов и сигналов с потоками
+    connect(threadStopUTM, &QThread::started, stopUTM, &StopUTM::stopUtm);
+
+    connect(stopUTM, &StopUTM::signalStopUTM, threadStopUTM, &QThread::quit);
+    connect(stopUTM, &StopUTM::signalStopUTM, stopUTM, &StopUTM::deleteLater);
+    connect(stopUTM, &StopUTM::signalStopUTM, this, &MainWindow::slotStopUTM);
+
+    connect(threadStopUTM, &QThread::finished, threadStopUTM, &QThread::deleteLater);
+
+    threadStopUTM->start();
+}
+
+// Удалить УТМ
+void MainWindow::on_actionDeleteUTM_triggered()
+{
+    int answer = QMessageBox::question(this, "Внимание", "Вы уверены, что хотите удалить УТМы?");
+    if (answer != QMessageBox::Yes)
+    {
+        return;
+    }
+    // Если нет установленных УТМ, прерываем
+    bool deleteStatus = true;
+    QDir dir;
+    dir.cd("C:/");
+    dir.setFilter(QDir::Dirs);
+    QFileInfoList list = dir.entryInfoList();
+    for (int i = 0; i < list.size(); ++i)
+    {
+        QFileInfo fileInfo = list[i];
+        if (fileInfo.filePath() == "C:/2UTM")
         {
-            // Делаем вектор с сопоставленными адресами
-            QString dev_parent;
-            QString dev_child;
-            dev_parent = list_device_parent[count].replace("\r", "");
-            for (int i = 0; i < list_device_parent.size() - 2; i += 2)
-            {
-                dev_parent = list_device_parent[i].replace("\r", "");
-                dev_child = MainWindow::device_child((WCHAR *)dev_parent.utf16());
-                if (dev_child.contains("AKTIV_RUTOKEN_ECP_0"))
-                {
-                    vec_device.prepend(dev_parent);
-                }
-                if (dev_child.contains("AKTIV_RUTOKEN_ECP_1"))
-                {
-                    vec_device.append(dev_parent);
-                }
-            }
-            for (__gnu_cxx::__normal_iterator<Pkcs11Device *, std::vector<Pkcs11Device, std::allocator<Pkcs11Device>>> i = devices.begin(); i != devices.end(); ++i)
-            {
-                Pkcs11Device& d = *i;
-
-                // Выводим серийный номер устройства
-                res_str = "Устройство с серийным номером: " + QString::fromStdString(d.getSerialNumber()) + "\n";
-
-                // Выводим путь до экземпляра устройства
-                if (count < vec_device.size())
-                {
-                    res_str += "Путь до экземпляра устройства: " + vec_device[count] + "\n";
-                    ++count;
-                }
-                else
-                {
-                    res_str += "Путь до экземпляра устройства: Недоступно\n";
-                }
-
-                // Кому принадлежит сертификат на устройстве
-                std::vector<Pkcs11Cert> certs = d.enumerateCerts();
-                Pkcs11Cert& cert = certs[0];
-                X500Dn subject = cert.getSubject();
-                for(int i = 0; i < subject.getRdn(rdnIds[0].first).length(); ++i)
-                {
-                    if (int(subject.getRdn(rdnIds[0].first)[i]) < 48 || int(subject.getRdn(rdnIds[0].first)[i]) > 58)//48-58 это ASCII-коды цифр
-                    {
-                        res_str +="Владелец устройства: " + QString::fromStdString(subject.getRdn(rdnIds[0].first)) + "\n";
-                        owner_device.append(QString::fromStdString(subject.getRdn(rdnIds[0].first)));
-                        break;
-                    }
-                    else
-                    {
-                        Pkcs11Cert& cert = certs[1];
-                        X500Dn subject = cert.getSubject();
-                        res_str +="Владелец устройства: " + QString::fromStdString(subject.getRdn(rdnIds[0].first)) + "\n";
-                        owner_device.append(QString::fromStdString(subject.getRdn(rdnIds[0].first)));
-                        break;
-                    }
-                }
-                // Статус устройства
-                res_str += "Статус устройства: Включено\n";
-                vec_info_device.append(res_str);
-            }
+            continue;
         }
-        if (vec_device_off.size() != 0)
+        if (fileInfo.filePath().contains("UTM"))
         {
-            count = 0;
-            for (int i = 0; i < vec_device_off.size(); ++i)
-            {
-                // Добавляем путь в вектор для отключенного утсройства
-                vec_device.append(vec_device_off[count].replace("\r", ""));
-
-                // Выводим серийный номер устройства
-                res_str = "Устройство с серийным номером: Недоступно\n";
-
-                // Выводим путь до экземпляра устройства
-                res_str += "Путь до экземпляра устройства: " + vec_device_off[count] + "\n";
-                ++count;
-
-                // Кому принадлежит сертификат на устройстве
-                res_str +="Владелец устройства: Недоступно\n";
-
-                // Статус устройства
-                res_str += "Статус устройства: Отключено\n";
-                vec_info_device.append(res_str);
-            }
+            deleteStatus = false;
         }
-        qInfo(logInfo()) << "Успешно получили список устройств";
     }
-    if (device.size() == 0)
+    if (deleteStatus)
     {
-        device = vec_device;
+        qWarning(logWarning()) << "Ошибка начала удаления, нет установленных УТМ";
+        QMessageBox::warning(this, "Ошибка", "Ошибка начала удаления, нет установленных УТМ!");
+        return;
     }
-    if (info_device.size() == 0)
+
+    // Чтение из конфига
+    QSettings setting("config.ini", QSettings::IniFormat);
+    QStringList keysList = setting.allKeys(); // ключи из конфига
+
+    if (keysList.empty())
     {
-        info_device = vec_info_device;
+        qWarning(logWarning()) << "Не найден файл конфига, запуск прерван";
+        QMessageBox::warning(this, "Ошибка", "Не найден файл конфига, запуск прерван!");
+        return;
     }
-}
 
-// Сигнал после переподключения устройств
-void MainWindow::after_reconnect()
-{
-    ui->statusbar->showMessage("Устройства переподключены");
-    if (loader)
+    // Делаем вектора из конфига из каждой группы
+    QVector<QString> vectorAttr;
+
+    // Заполняем их
+    for (int i = 0; i < keysList.size(); i += 4)
     {
-        loader->close();
-        loader = nullptr;
+        vectorAttr.push_back(setting.value(keysList[i]).toString());
     }
-}
 
-// Сигнал после неудачного переподключения устройств
-void MainWindow::after_error_reconnect()
-{
-    ui->statusbar->showMessage("Устройства не переподключены, произошла ошибка! Подробности смотрите в логе программы");
-    if (loader)
-    {
-        loader->close();
-        loader = nullptr;
-    }
-}
+    loader = new Loader(this);
+    loader->setAttribute(Qt::WA_ShowModal, true);
+    loader->show();
 
-// Метод после старта утм
-void MainWindow::after_start()
-{
-    ui->statusbar->showMessage("УТМы запущены");
-    if (loader)
-    {
-        loader->close();
-        loader = nullptr;
-    }
-    QSystemTrayIcon::MessageIcon icon = QSystemTrayIcon::MessageIcon(QSystemTrayIcon::Information);
-    if (lst_start[1] == "true")
-    {
-        p_trayIcon->showMessage("2UTM", ("УТМы запущены! Программа будет закрыта через минуту..."), icon, 2000);
-        QTimer::singleShot(60000, this, &MainWindow::exit_prog);
-    }
-}
+    //Создание объектов рабочего класа и потока
+    threadDeleteUTM = new QThread();
+    deleteUTM = new DeleteUTM();
+    deleteUTM->setParametrsDeleteUTM(vectorAttr);
+    deleteUTM->moveToThread(threadDeleteUTM);
 
-// Метод после авто старта
-void MainWindow::after_auto_start()
-{
-    ui->statusbar->showMessage("УТМы не установлены, запуск не произведен");
-    if (loader)
-    {
-        loader->close();
-        loader = nullptr;
-    }
-}
+    //Соединение слотов и сигналов с потоками
+    connect(threadDeleteUTM, &QThread::started, deleteUTM, &DeleteUTM::deleteUtm);
 
-// Метод после неудачного старта утм
-void MainWindow::after_error_start()
-{
-    ui->statusbar->showMessage("УТМы не запущены, произошла ошибка! Подробности смотрите в логе программы");
-    if (loader)
-    {
-        loader->close();
-        loader = nullptr;
-    }
-}
+    connect(deleteUTM, &DeleteUTM::signalDeleteUTM, threadDeleteUTM, &QThread::quit);
+    connect(deleteUTM, &DeleteUTM::signalDeleteUTM, deleteUTM, &DeleteUTM::deleteLater);
+    connect(deleteUTM, &DeleteUTM::signalDeleteUTM, this, &MainWindow::slotDeleteUTM);
 
-// Метод после остановки утм
-void MainWindow::after_stop()
-{
-    ui->statusbar->showMessage("УТМы остановлены");
-    loader->close();
-    loader = nullptr;
-}
+    connect(threadDeleteUTM, &QThread::finished, threadDeleteUTM, &QThread::deleteLater);
 
-// Метод после неудачной остановки утм
-void MainWindow::after_error_stop()
-{
-    ui->statusbar->showMessage("УТМы не остановлены, произошла ошибка! Подробности смотрите в логе программы");
-    loader->close();
-    loader = nullptr;
-}
-
-// Метод после удаления утм
-void MainWindow::after_uninstall()
-{
-    ui->statusbar->showMessage("УТМы удалены");
-    loader->close();
-    loader = nullptr;
-}
-
-// Метод после неудачного удаления утм
-void MainWindow::after_error_uninstall()
-{
-    ui->statusbar->showMessage("УТМы не удалены, произошла ошибка! Подробности смотрите в логе программы");
-    loader->close();
-    loader = nullptr;
+    threadDeleteUTM->start();
 }
 
 // О программе
-void MainWindow::on_actionAboutProg_triggered()
+void MainWindow::on_actionAboutProgramm_triggered()
 {
-    QMessageBox::information(this, "О программе", "Позволяет установить 2 УТМа на один компьютер, хоть и ФСРАР говорит, что нельзя...");
-}
-
-// Прочитать устройства
-void MainWindow::on_action_read_device_triggered()
-{
-    device.clear();
-    info_device.clear();
-    MainWindow::show_device();
-    for (int i = 0; i < info_device.size(); ++i)
-    {
-        ui->listWidget->addItem(info_device[i]);
-    }
-    ui->statusbar->showMessage(message_statusbar);
-}
-
-// Включить устройство
-void MainWindow::on_action_enable_device_triggered()
-{
-    int dev_on = ui->listWidget->currentRow();
-    if (dev_on == -1)
-    {
-        message_statusbar = "Выберите одно устройство";
-        ui->statusbar->showMessage(message_statusbar);
-    }
-    else
-    {
-        process.start("devcon enable \"@" + device[dev_on]);
-        if(!process.waitForFinished(60000))
-        {
-            ui->statusbar->showMessage("Не удалось включить устройство");
-            qWarning(logWarning()) << "Не удалось включить устройство, функция не ответила и завершилась по таймауту";
-            return;
-        }
-        info_device[dev_on].replace("Отключено", "Включено");
-        ui->listWidget->clear();
-        for (int i = 0; i < info_device.size(); ++i)
-        {
-            ui->listWidget->addItem(info_device[i]);
-        }
-        Sleep(1000);
-        ui->statusbar->showMessage("Устройство включено");
-        qInfo(logInfo()) << "Включено устройство " + info_device[dev_on];
-    }
-}
-
-// Установить УТМ
-void MainWindow::on_action_install_utm_triggered()
-{
-    if (QDir("C:/UTM").exists())
-    {
-        QMessageBox::warning(this, "Ошибка", "Удалите УТМ, который у вас уже установлен!");
-    }
-    else
-    {
-        InstallUTM *install = new InstallUTM(this);
-        install->setAttribute(Qt::WA_ShowModal, true);
-        install->installutm_name_device(owner_device, device);
-        install->show();
-    }
-}
-
-// Удалить утм
-void MainWindow::on_action_uninstall_utm_triggered()
-{
-    if (!QDir("C:/UTM").exists() && !QDir("C:/UTM_2").exists())
-    {
-        QMessageBox::warning(this, "Ошибка", "Не найдены установленные УТМ!");
-    }
-    else
-    {
-        int answer = QMessageBox::question(this, "Удаление УТМ", "Вы уверены, что хотите удалить УТМы?");
-        if (answer == QMessageBox::Yes)
-        {
-            // Окно загрузки
-            ui->statusbar->showMessage("Удаляем УТМы...");
-            loader = new Loader(this);
-            loader->setAttribute(Qt::WA_ShowModal, true);
-            loader->show();
-
-            MainWindow::uninstall_th();
-        }
-    }
+    QMessageBox::information(this, "О программе", "Программа позволяет запускать до 10ти УТМ одновременно.");
 }
 
 // Связь с разработчиком
-void MainWindow::on_action_callback_triggered()
+void MainWindow::on_actionCallBack_triggered()
 {
-    QMessageBox::information(this, "Связь с разработчиком", "github - https://github.com/2UTM/2UTM\nпочта - 2UTM.dev@gmail.com");
+    QMessageBox::information(this, "Связь с разработчиком", "Разработчик: Королев Сергей\n"
+                                                            "GitHub: https://github.com/2UTM/2UTM\n"
+                                                            "Почта: 2UTM.dev@gmail.com\n"
+                                                            "Telegram: @regnorr");
 }
-
-// Выход
-void MainWindow::on_action_exit_triggered()
-{
-    p_trayIcon->hide();
-    QApplication::exit(0);
-}
-
-// Отключить устройство
-void MainWindow::on_action_disable_device_triggered()
-{
-    int dev_of = -1;
-    dev_of = ui->listWidget->currentRow();
-    if (dev_of == -1)
-    {
-        message_statusbar = "Выберите одно устройство";
-        ui->statusbar->showMessage(message_statusbar);
-    }
-    else
-    {
-        process.start("devcon disable \"@" + device[dev_of]);
-        if(!process.waitForFinished(60000))
-        {
-            ui->statusbar->showMessage("Не удалось отключить устройство");
-            qWarning(logWarning()) << "Не удалось отключить устройство, функция не ответила и завершилась по таймауту";
-            return;
-        }
-        info_device[dev_of].replace("Включено", "Отключено");
-        ui->listWidget->clear();
-        for (int i = 0; i < info_device.size(); ++i)
-        {
-            ui->listWidget->addItem(info_device[i]);
-        }
-        Sleep(1000);
-        ui->statusbar->showMessage("Устройство отключено");
-        qInfo(logInfo()) << "Отключено устройство " + info_device[dev_of];
-    }
-}
-
-// Переподключить устройства
-void MainWindow::on_action_reconnect_device_triggered()
-{
-    if (QFile("./config.ini").exists())
-    {
-        // Окно загрузки
-        ui->statusbar->showMessage("Переподключаем устройства...");
-        loader = new Loader(this);
-        loader->setAttribute(Qt::WA_ShowModal, true);
-        loader->show();
-
-        MainWindow::reconnect_th();
-    }
-    else
-    {
-        ui->statusbar->showMessage("Не найден файл настроек");
-    }
-}
-
-// Запустить утм
-void MainWindow::on_action_start_utm_triggered()
-{
-    if (QFile("./config.ini").exists() && device.size() > 1)
-    {
-        // Окно загрузки
-        ui->statusbar->showMessage("Запускаем УТМы...");
-        loader = new Loader(this);
-        loader->setAttribute(Qt::WA_ShowModal, true);
-        loader->show();
-
-        MainWindow::start_th();
-    }
-    else
-    {
-        ui->statusbar->showMessage("Нет установленных УТМ или подключенных рутокенов меньше двух");
-    }
-}
-
-// Остановить утм
-void MainWindow::on_action_stop_utm_triggered()
-{
-    if (QFile("./config.ini").exists())
-    {
-        // Окно загрузки
-        ui->statusbar->showMessage("Останавливаем УТМы...");
-        loader = new Loader(this);
-        loader->setAttribute(Qt::WA_ShowModal, true);
-        loader->show();
-
-        MainWindow::stop_th();
-    }
-    else
-    {
-        ui->statusbar->showMessage("Нет установленных УТМ");
-    }
-}
-
-// Поменять порядок устройств
-void MainWindow::on_action_change_device_triggered()
-{
-    change_device = new Change_device();
-    change_device->setAttribute(Qt::WA_ShowModal, true);
-    change_device->change_device_name_device(owner_device, device);
-    change_device->exec();
-    change_device->deleteLater();
-}
-
-// Выход
-void MainWindow::exit_prog()
-{
-    p_trayIcon->hide();
-    QApplication::exit(0);
-}
-
-// Настройки
-void MainWindow::on_action_settings_triggered()
-{
-    setting = new Setting();
-    setting->exec();
-    setting->deleteLater();
-}
-

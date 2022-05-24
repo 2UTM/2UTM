@@ -1,71 +1,94 @@
 #ifndef INSTALLGUI_H
 #define INSTALLGUI_H
 
-#include <QMainWindow>
-#include <QFileDialog>
-#include <install.h>
-#include <QThread>
-#include <QMovie>
-#include <QMessageBox>
+#include "installutm.h"
 #include "loader.h"
 
+#include <QDialog>
+#include <QComboBox>
+#include <QLabel>
+#include <QSpinBox>
+#include <QMessageBox>
+#include <QVBoxLayout>
+#include <QFileDialog>
+#include <QSet>
+#include <QThread>
+#include <QMovie>
+
 namespace Ui {
-class InstallUTM;
+class InstallGUI;
 }
 
-class InstallUTM : public QMainWindow
+class InstallGUI : public QDialog
 {
     Q_OBJECT
 
-signals:
-    // Сигнал прекращения установки
-    void signal_cancel_install();
-
 public:
-    explicit InstallUTM(QWidget *parent = nullptr);
-    ~InstallUTM();
+    explicit InstallGUI(QWidget *parent = nullptr);
+    ~InstallGUI();
 
-   // Метод передачи вуктора из главного окна
-   void installutm_name_device(QVector<QString> owner_dev, QVector<QString> dev);
+    // Метод передачи параметров
+    void setParametrs(QMap<QString, QString> &mapAttrReaderNameReader,
+                      SCARDCONTEXT &hContext,
+                      QVector<QString> &serialNumberDevice);
 
-public slots:
-   // Слот информации об установке
-   void install_info(QString info, int progress_value);
+    // Метод добавления комбобокса
+    QComboBox* addComboBox();
 
-   // Метод после завршения потока установки
-   void after_install();
+    // Метод добавления лабел для комбобокса
+    QLabel* addLabel();
 
-   // Метод после завршения потока установки c ошибкой
-   void after_error_install();
-
-   // Метод после отмены установки
-   void after_cancel_install();
-
+    // Метод добавления спинбокса для порта УТМ
+    QSpinBox *addSpinBox();
 private slots:
-   // Обзор для файла утм
-   void on_toolButton_clicked();
+    // Добавить УТМ
+    void on_pushButtonInstallAddUTM_clicked();
 
-   // Отмена
-   void on_pushButton_cancel_clicked();
+    // Отменить в установке
+    void on_pushButtonInstallCancel_clicked();
 
-   // Установить
-   void on_pushButton_install_clicked();
+    // Отменить в смене ключа
+    void on_pushButtonChangeCancel_clicked();
 
-   // Выход из окна установки
-   void on_pushButton_cancel_gui_clicked();
+    // Установить в закладке установке
+    void on_pushButtonInstallInstall_clicked();
+
+    // Обзор для файла утм
+    void on_toolButton_clicked();
+
+    // Удалить УТМ
+    void on_pushButtonInstallDeleteUTM_clicked();
+
+    // Слот получения статуса установки УТМ
+    void slotErrorInstallUTM(QString error, int errorCode);
+
+    // Слот для прогрессбара
+    void slotProgressBar(QString label, int progress);
+
+    // Прервать установку
+    void on_pushButtonBreakInstall_clicked();
+
+signals:
+    // Сигнал об успешной установке в главное окно
+    void signalSuccesInstall();
 
 private:
-    Ui::InstallUTM *ui;
-    QVector<QString> installutm_device;
-    QVector<QString> installutm_owner_device;
-    QString file_utm;
-    QString file_app;
-    QString first_device;
-    QString second_device;
-    Install *install;
-    QThread *thread;
-    QMovie *loader;
-    Loader *cancel_loader;
+    Ui::InstallGUI *ui;
+    Loader *loader; // окно загрузки
+    QMap<QString, QString> mapParametrsInstall; // мап с сопоставленными именами и атрибутами ридеров
+    QVector<QComboBox*> vectorComboBox; // вектор комбобокс для выбора ключа
+    QVector<QLabel*> vectorLabel;  // вектор лабел для комбобокса
+    QVector<QSpinBox*> vectorSpinBox; // вектор спинбокс для выбора порта
+    QGridLayout *layout;  // лайоут для скрол арены
+    QVector<QString> installGuiSerialNumberDevice; // вектор серийных номеров устройств для записи в конфиг
+    InstallUTM *installUtm;
+    QThread *threadInstallUtm;
+    QMovie *loaderInstall; // гифка
+    SCARDCONTEXT installGUIhContext; // контекст смарткарт
+    int w = 300; // ширина виджетов выбора ключа
+    int h = 20;  // высота виджетов выбора ключа
+    int count = 0; // номер УТМа для лейбла
+    int portCount = 8080; // начальный порт для утм
 };
 
 #endif // INSTALLGUI_H

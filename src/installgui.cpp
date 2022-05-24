@@ -1,171 +1,307 @@
 #include "installgui.h"
 #include "ui_installgui.h"
+#include "logging.h"
 
-InstallUTM::InstallUTM(QWidget *parent) :
-    QMainWindow(parent),
-    ui(new Ui::InstallUTM)
+InstallGUI::InstallGUI(QWidget *parent) :
+    QDialog(parent),
+    ui(new Ui::InstallGUI)
 {
+    installUtm = new InstallUTM();
     ui->setupUi(this);
+    setFixedSize(529, 410);
+    setWindowFlags(this->windowFlags() & ~Qt::WindowContextHelpButtonHint);
     setWindowTitle("Установка");
-    ui->label_install->hide();
+
+    // TODO
+    ui->tabWidget->removeTab(1);
+
+    ui->labelInstall->hide();
+    ui->labelInstallGif->hide();
+    ui->labelInstallInfo->hide();
     ui->progressBar->hide();
+    ui->pushButtonBreakInstall->hide();
+    ui->scrollArea->setWidgetResizable(true);
+    layout = new QGridLayout();
+    ui->scrollAreaWidgetContents->setLayout(layout);
 }
 
-InstallUTM::~InstallUTM()
+InstallGUI::~InstallGUI()
 {
     delete ui;
+    delete layout;
 }
 
-// Метод передачи вектора из главного окна
-void InstallUTM::installutm_name_device(QVector<QString> owner_dev, QVector<QString> dev)
+// Метод передачи параметров
+void InstallGUI::setParametrs(QMap<QString, QString> &mapAttrReaderNameReader,
+                              SCARDCONTEXT &hContext,
+                              QVector<QString> &serialNumberDevice)
 {
-    installutm_owner_device = owner_dev;
-    installutm_device = dev;
-    for (int i = 0; i < installutm_owner_device.size(); ++i)
+    mapParametrsInstall = mapAttrReaderNameReader;
+    installGUIhContext = hContext;
+    installGuiSerialNumberDevice = serialNumberDevice;
+}
+
+// Добавить УТМ
+void InstallGUI::on_pushButtonInstallAddUTM_clicked()
+{
+    if (vectorComboBox.size() == 10)
     {
-        ui->comboBox_UTM1->addItem(installutm_owner_device[i]);
-        ui->comboBox_UTM2->addItem(installutm_owner_device[i]);
+        QMessageBox::warning(this, "Внимание", "Достигнуто максимальное количество УТМ! (10)");
+        return;
     }
+    if (vectorComboBox.size() == mapParametrsInstall.size())
+    {
+        QMessageBox::warning(this, "Внимание", "Добавление отменено, так как не достаточно активных токенов!");
+        return;
+    }
+    vectorComboBox.push_back(addComboBox());
+
+    // Размещение виджетов в скролл арене
+    int offset = 0; // смещение виджетов
+    for (int i = 0; i < vectorLabel.size(); ++i)
+    {
+        layout->addWidget(vectorLabel[i], i + offset, 0);
+        layout->addWidget(vectorComboBox[i], (i + offset) + 1, 0);
+        layout->addWidget(vectorSpinBox[i], (i + offset) + 1, 1);
+        offset += 2;
+    }
+}
+
+// Метод добавления спинбокса для порта УТМ
+QSpinBox* InstallGUI::addSpinBox()
+{
+    QSpinBox *spinBox = new QSpinBox(ui->scrollArea);
+    spinBox->setMinimum(1);
+    spinBox->setMaximum(65535);
+    spinBox->setValue(portCount);
+    ++portCount;
+
+    return spinBox;
+}
+
+// Метод добавления лабел для комбобокса
+QLabel* InstallGUI::addLabel()
+{
+    ++count;
+    QLabel *label = new QLabel(ui->scrollArea);
+    label->setText("Выберите ключ и порт для УТМ " + QString::number(count));
+    label->setFixedSize(w, h);
+
+    return label;
+}
+
+// Метод добавления комбобокса
+QComboBox* InstallGUI::addComboBox()
+{
+    vectorLabel.push_back(addLabel());
+    vectorSpinBox.push_back(addSpinBox());
+
+    QComboBox *comboBox = new QComboBox(ui->scrollArea);
+
+    for (auto i = mapParametrsInstall.begin(); i != mapParametrsInstall.end(); ++i)
+    {
+        comboBox->addItem(i.value());
+    }
+    comboBox->setFixedSize(w, h);
+
+    return comboBox;
+}
+
+// Отменить в закладке установки
+void InstallGUI::on_pushButtonInstallCancel_clicked()
+{
+    installUtm->set_status_thread(false);
+    for (int i = 0; i < vectorLabel.size(); ++i)
+    {
+        delete vectorLabel[i];
+        delete vectorComboBox[i];
+        delete vectorSpinBox[i];
+    }
+    close();
+}
+
+// Отменить в закладке смена ключа
+void InstallGUI::on_pushButtonChangeCancel_clicked()
+{
+    for (int i = 0; i < vectorLabel.size(); ++i)
+    {
+        delete vectorLabel[i];
+        delete vectorComboBox[i];
+    }
+    close();
+}
+
+// Установить в закладке установки
+void InstallGUI::on_pushButtonInstallInstall_clicked()
+{
+    QSet<QString> setDevice;
+    QSet<QString> setPort;
+    QVector<QString> vectorDeviceChoose;
+    QVector<QString> vectorPortChoose;
+    for (int i = 0; i < vectorComboBox.size(); ++i)
+    {
+        vectorDeviceChoose.push_back(vectorComboBox[i]->currentText());
+        setDevice.insert(vectorComboBox[i]->currentText());
+
+        vectorPortChoose.push_back(vectorSpinBox[i]->text());
+        setPort.insert(vectorSpinBox[i]->text());
+    }
+
+    // Проверка на добавление утм
+    if (vectorDeviceChoose.empty())
+    {
+        QMessageBox::warning(this, "Внимание", "Нет добаленных УТМ!");
+        return;
+    }
+
+    // Шутеечка)
+    if (vectorDeviceChoose.size() == 1)
+    {
+        QMessageBox::warning(this, "Внимание", "Один УТМ можно и руками установить))");
+        return;
+    }
+
+    // Если сет не равен вектору, значит выбраны одинаковые устройства или одинаковые порты
+    if (setDevice.size() != vectorDeviceChoose.size())
+    {
+        QMessageBox::warning(this, "Внимание", "Выбраны одинаковые токены для разных УТМ!");
+        return;
+    }
+
+    // Если сет не равен вектору, значит выбраны одинаковые порты
+    if (setPort.size() != vectorPortChoose.size())
+    {
+        QMessageBox::warning(this, "Внимание", "Выбраны одинаковые порты для разных УТМ!");
+        return;
+    }
+
+    // Проверка что выбран путь до утм
+    QString fileUTM = ui->lineEditFileUTM->text();
+    if (fileUTM.isEmpty())
+    {
+        QMessageBox::warning(this, "Внимание", "Не выбран путь до установочного файла УТМ!");
+        return;
+    }
+
+    // Скрываем все виджеты и показываем прогрессбар
+    ui->tabWidget->hide();
+    ui->labelInstall->show();
+    ui->labelInstallGif->show();
+    loaderInstall = new QMovie(QApplication::applicationDirPath() + "/gif/loader.gif");
+    ui->labelInstallGif->setMovie(loaderInstall);
+    loaderInstall->start();
+    ui->labelInstallInfo->show();
+    ui->progressBar->show();
+    ui->pushButtonBreakInstall->show();
+
+    // Передаем параметры для установки
+    QString filaAppPath = QApplication::applicationDirPath();
+    installUtm->setParametrsInstall(vectorDeviceChoose,
+                                    vectorPortChoose,
+                                    mapParametrsInstall,
+                                    fileUTM,
+                                    installGUIhContext,
+                                    filaAppPath,
+                                    installGuiSerialNumberDevice);
+    installUtm->set_status_thread(true);
+
+    // Запуск установки в отдельном потоке
+    threadInstallUtm = new QThread();
+    installUtm->moveToThread(threadInstallUtm);
+
+    //Соединение слотов и сигналов с потоками
+    connect(threadInstallUtm, &QThread::started, installUtm, &InstallUTM::installUTM);
+
+    connect(installUtm, &InstallUTM::signalInstallUTMErrorCode, threadInstallUtm, &QThread::quit);
+    connect(installUtm, &InstallUTM::signalInstallUTMErrorCode, installUtm, &InstallUTM::deleteLater);
+    connect(installUtm, &InstallUTM::signalInstallUTMErrorCode, this, &InstallGUI::slotErrorInstallUTM);
+    connect(installUtm, &InstallUTM::signalProgressBar, this, &InstallGUI::slotProgressBar);
+
+    connect(threadInstallUtm, &QThread::finished, threadInstallUtm, &QThread::deleteLater);
+
+    threadInstallUtm->start();
 }
 
 // Обзор для файла утм
-void InstallUTM::on_toolButton_clicked()
+void InstallGUI::on_toolButton_clicked()
 {
-    file_utm = QFileDialog::getOpenFileName(this, tr("Открыть файлы"), QString(), tr("(*.exe)")).toUtf8();
-    ui->lineEdit_utm->clear();
-    ui->lineEdit_utm->setText(file_utm);
-    ui->lineEdit_utm->setCursorPosition(0);
+    ui->lineEditFileUTM->clear();
+    ui->lineEditFileUTM->setText(QFileDialog::getOpenFileName(this, tr("Открыть файлы"), QString(), tr("(*.exe)")).toUtf8());
+    ui->lineEditFileUTM->setCursorPosition(0);
 }
 
-// Отмена
-void InstallUTM::on_pushButton_cancel_clicked()
+// Удалить УТМ
+void InstallGUI::on_pushButtonInstallDeleteUTM_clicked()
 {
-    install->set_status_thread(false);
-    ui->pushButton_cancel->setEnabled(false);
-    cancel_loader = new Loader(this);
-    cancel_loader->setAttribute(Qt::WA_ShowModal, true);
-    cancel_loader->show();
-}
-
-// Метод после завршения потока установки
-void InstallUTM::after_install()
-{
-    loader->stop();
-    QMessageBox::information(this, "Операция завершена", "УТМы успешно установлены!\nЕсли ошбика RSA ключа не пропадет, перезапустите УТМы, выбрав соответствующие пункты в меню");
-    close();
-}
-
-// Метод после завршения потока установки c ошибкой
-void InstallUTM::after_error_install()
-{
-    loader->stop();
-    QMessageBox::warning(this, "Операция не завершена", "Операция завершена с ошибкой! Подробности смотрите в логе программы");
-    close();
-}
-
-// Метод после отмены установки
-void InstallUTM::after_cancel_install()
-{
-    loader->stop();
-    cancel_loader->close();
-    cancel_loader = nullptr;
-    QMessageBox::information(this, "Операция не завершена", "Операция была отменена пользователем");
-    ui->statusbar->showMessage("Установка отменена");
-    close();
-}
-
-// Слот информации об установке
-void InstallUTM::install_info(QString info, int progress_value)
-{
-    ui->label_install_info->setText(info);
-    ui->progressBar->setValue(progress_value);
-}
-
-// Установить
-void InstallUTM::on_pushButton_install_clicked()
-{
-    file_app = QApplication::applicationDirPath();
-    int first_device_t = ui->comboBox_UTM1->currentIndex();
-    int second_device_t = ui->comboBox_UTM2->currentIndex();
-    if (first_device_t == second_device_t)
+    if (!vectorLabel.empty() && !vectorComboBox.empty())
     {
-        ui->statusbar->showMessage("Выбраны одинаковые устройства");
+        delete vectorLabel.back();
+        delete vectorComboBox.back();
+        delete vectorSpinBox.back();
+        vectorLabel.pop_back();
+        vectorComboBox.pop_back();
+        vectorSpinBox.pop_back();
+        --count;
+        --portCount;
+    }
+}
+
+// Слот получения статуса установки УТМ
+void InstallGUI::slotErrorInstallUTM(QString error, int errorCode)
+{
+    if (errorCode == 0)
+    {
+        loaderInstall->stop();
+        delete loaderInstall;
+        QMessageBox::information(this, "Успешно", error);
+        qInfo(logInfo()) << error;
+        emit signalSuccesInstall();
+        close();
+    }
+    else if (errorCode == 2)
+    {
+        loaderInstall->stop();
+        delete loaderInstall;
+        loader->close();
+        delete loader;
+        QMessageBox::information(this, "Прервано", error);
+        qInfo(logInfo()) << error;
+        emit signalSuccesInstall();
+        close();
+    }
+    else if (errorCode == 3)
+    {
+        loaderInstall->stop();
+        delete loaderInstall;
+        QMessageBox::warning(this, "Ошибка", error);
+        qInfo(logWarning()) << error;
+        emit signalSuccesInstall();
+        close();
     }
     else
     {
-        if (ui->lineEdit_utm->text() == "")
-        {
-            ui->statusbar->showMessage("Укажите путь до установочного файла УТМ");
-        }
-        else
-        {
-            first_device = installutm_device[first_device_t];
-            second_device = installutm_device[second_device_t];
-
-            // Записываем в конфиг порядок рутокенов
-            QFile file_write(file_app + "/config.ini");
-            if (!file_write.open(QIODevice::WriteOnly | QIODevice::Text))
-            {
-                QMessageBox::warning(this, "Операция не завершена", "Не удалось получить доступ к файлу настроек!");
-                return;
-            }
-            QTextStream writeStream(&file_write);
-            writeStream << first_device;
-            writeStream << "\n";
-            writeStream << second_device;
-            file_write.close();
-
-            ui->label->hide();
-            ui->comboBox_UTM1->hide();
-            ui->label_2->hide();
-            ui->comboBox_UTM2->hide();
-            ui->label_3->hide();
-            ui->lineEdit_utm->hide();
-            ui->toolButton->hide();
-            ui->pushButton_install->hide();
-            ui->pushButton_cancel_gui->hide();
-            ui->statusbar->showMessage("Выполняется установка...");
-            loader = new QMovie(QApplication::applicationDirPath() + "/gif/loader.gif");
-            ui->label_install->show();
-            ui->progressBar->show();
-            ui->label_install_gif->setMovie(loader);
-            loader->start();
-
-            //Создание обектов рабочего класа и потока
-            thread = new QThread(this);
-            install = new Install();
-            install->install_set_device(first_device, second_device, file_app, file_utm, installutm_device[0]);
-            install->set_status_thread(true);
-            install->moveToThread(thread);
-
-            //Соединение слотов и сигналов с потоками
-            connect(thread, &QThread::started, install, &Install::install_utm);
-            connect(install, &Install::install_info_signal, this, &InstallUTM::install_info);
-
-            connect(install, &Install::signalEnd, thread, &QThread::quit);
-            connect(install, &Install::signalEnd, install, &Install::deleteLater);
-            connect(install, &Install::signalEnd, this, &InstallUTM::after_install);
-
-            connect(install, &Install::signalErrorEnd, thread, &QThread::quit);
-            connect(install, &Install::signalErrorEnd, install, &Install::deleteLater);
-            connect(install, &Install::signalErrorEnd, this, &InstallUTM::after_error_install);
-
-            connect(install, &Install::signalCancelEnd, thread, &QThread::quit);
-            connect(install, &Install::signalCancelEnd, install, &Install::deleteLater);
-            connect(install, &Install::signalCancelEnd, this, &InstallUTM::after_cancel_install);
-
-            connect(thread, &QThread::finished, thread, &QThread::deleteLater);
-
-            //Старт потока
-            thread->start();
-        }
+        loaderInstall->stop();
+        delete loaderInstall;
+        QMessageBox::warning(this, "Ошибка", error);
+        qWarning(logWarning()) << error;
+        emit signalSuccesInstall();
+        close();
     }
 }
 
-
-// Выход из окна установки
-void InstallUTM::on_pushButton_cancel_gui_clicked()
+// Слот для прогрессбара
+void InstallGUI::slotProgressBar(QString label, int progress)
 {
-    close();
+    ui->labelInstallInfo->setText(label);
+    ui->progressBar->setValue(progress);
 }
 
+// Прервать установку
+void InstallGUI::on_pushButtonBreakInstall_clicked()
+{
+    loader = new Loader(this);
+    loader->setAttribute(Qt::WA_ShowModal, true);
+    loader->show();
+
+    installUtm->set_status_thread(false);
+}

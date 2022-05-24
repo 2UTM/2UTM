@@ -20,8 +20,7 @@ int main(int argc, char *argv[])
 
     MainWindow w;
     w.setWindowTitle("2UTM");
-    w.setWindowIcon(QIcon("/image/2UTM.ico"));
-//    w.show();
+    w.show();
     return a.exec();
 }
 
