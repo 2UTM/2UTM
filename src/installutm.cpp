@@ -1,338 +1,1100 @@
-#include "installutm.h"
-#include "control.h"
+#define _CRT_SECURE_NO_WARNINGS
+#include "installUTM.h"
+#include "ControlReaders.h"
+#include "ControlService.h"
 
-InstallUTM::InstallUTM(QObject *parent) : QObject(parent)
+
+extern std::string pathExe;
+extern bool flagInstallUTM;
+bool flagChangeStatic = true;
+HANDLE evt = CreateEvent(
+	NULL, // игнорируеться, должен быть NULL
+	TRUE, // автоматический сброс ивента (TRUE - выключен, нужно использовать ResetEvent)
+	FALSE, // начальное состояние (FALSE - не сигнальное)
+	NULL); // имя ивента
+
+// установка УТМ
+void installUTM(HWND dlg, int countUTM, std::string fileUTM, SCARDCONTEXT ctx, std::vector<std::string> vecTokens,
+	std::vector<std::string> vecAttr, HWND btnCancel, HWND hDlg)
 {
+	flagInstallUTM = true;
+	flagChangeStatic = true;
+	bool flagStartUTM = false;
 
+	// Делаем не активной кнопку отмены
+	EnableWindow(btnCancel, FALSE);
+
+	// Устанавливаем шаг прогрессбара
+	SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_SETSTEP, 1, 0);
+
+	std::string str;
+	int err = 0;
+	std::string error;
+
+	str = "Установка УТМ 1";
+	SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, str.c_str());
+	logger(str, "INFO");
+	SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+
+	// Установка УТМ
+	err = startProcessInstallUTM(fileUTM);
+	if (err == 1)
+	{
+		flagChangeStatic = false;
+		error = "Установка УТМ завершилась ошибкой! Код ошибки - " + std::to_string(GetLastError());
+		MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+		logger(error, "ERROR");
+		EndDialog(dlg, 0);
+		return;
+	}
+	str = "УТМ 1 успешно установлен";
+	logger(str, "INFO");
+	SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+
+	// Удаляем службу УТМ
+	if (deleteServiceUTM(1) == 1)
+	{
+		flagChangeStatic = false;
+		error = "Не удалось удалить службу УТМ! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
+		MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+		logger(error, "ERROR");
+		if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+		{
+			logger("Отмена изменений завершилась неудачей", "ERROR");
+		}
+		EndDialog(dlg, 0);
+		return;
+	}
+	str = "Служба УТМ удалена";
+	logger(str, "INFO");
+	SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+
+	// Исправляем батник в первом утм, чтобы служба не стартовала сама
+	if (changeInstallBatUTM() == 1)
+	{
+		flagChangeStatic = false;
+		error = "Не удалось изменить install.bat в УТМ! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
+		MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+		logger(error, "ERROR");
+		if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+		{
+			logger("Отмена изменений завершилась неудачей", "ERROR");
+		}
+		EndDialog(dlg, 0);
+		return;
+	}
+	str = "Батник УТМ исправлен";
+	logger(str, "INFO");
+	SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+
+	// Устанавливаем службу первого УТМ уже без автозапуска
+	if (installServiceUTM(1) == 1)
+	{
+		flagChangeStatic = false;
+		error = "Не удалось установить службу УТМ! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
+		MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+		logger(error, "ERROR");
+		if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+		{
+			logger("Отмена изменений завершилась неудачей", "ERROR");
+		}
+		EndDialog(dlg, 0);
+		return;
+	}
+	str = "Служба УТМ установлена";
+	logger(str, "INFO");
+	SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+
+	// Делаем активной кнопку отмены
+	EnableWindow(btnCancel, TRUE);
+
+	// проверка флага
+	if (flagInstallUTM == false)
+	{
+		logger("Поток установки отменен пользователем", "INFO");
+		SetEvent(evt);
+		return;
+	}
+
+	// Читаем конфиг
+	SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, "Чтение конфига");
+	logger("Чтение конфига", "INFO");
+	SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+	std::vector<std::string> vectorNameReaders, vectorAttrReaders, ports, serialNumbers;
+	if (readConfigNameAndReader(countUTM, vectorNameReaders, vectorAttrReaders, ports, serialNumbers) == 1)
+	{
+		error = "Чтение конфига завершилась ошибкой! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
+		MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+		logger(error, "ERROR");
+		// Делаем не активной кнопку отмены
+		EnableWindow(btnCancel, FALSE);
+		if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+		{
+			logger("Отмена изменений завершилась неудачей", "ERROR");
+		}
+		EndDialog(dlg, 0);
+		return;
+	}
+	logger("Чтение конфига успешно завершено", "INFO");
+
+	// проверка флага
+	if (flagInstallUTM == false)
+	{
+		logger("Поток установки отменен пользователем", "INFO");
+		SetEvent(evt);
+		return;
+	}
+
+	// Если ставится 1 УТМ, то завершаем
+	if (ports.size() == 1)
+	{
+		// запуск службы УТМ
+		SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, "Запуск службы Transport");
+		logger("Запуск службы Transport", "INFO");
+		SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+		err = startServiceUTM("Transport");
+		if (err != 0)
+		{
+			error = "Ошибка запуска службы Trasport! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
+			MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+			logger(error, "ERROR");
+			// Делаем не активной кнопку отмены
+			EnableWindow(btnCancel, FALSE);
+			if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+			{
+				logger("Отмена изменений завершилась неудачей", "ERROR");
+			}
+			EndDialog(dlg, 0);
+			return;
+		}
+		logger("Запуск службы Transport успешно завершено", "INFO");
+
+		// проверка флага
+		if (flagInstallUTM == false)
+		{
+			logger("Поток установки отменен пользователем", "INFO");
+			SetEvent(evt);
+			return;
+		}
+
+		// Проверка работы УТМ (запрос на главную страницу)
+		str = "Проверка работы УТМ 1 (запрос на главную страницу)";
+		SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, str.c_str());
+		logger(str, "INFO");
+		SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+		err = checkHomePageUTM(ports[0], flagStartUTM);
+		if (err == 2)
+		{
+			logger("Поток установки отменен пользователем", "INFO");
+			return;
+		}
+		if (err != 0)
+		{
+			error = "Не удалось проверить работу УТМ! Код ошибки - " + std::to_string(err) + "\nФункция завершилась по таймауту\nБудет выполнена отмена изменений";
+			MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+			logger(error, "ERROR");
+			// Делаем не активной кнопку отмены
+			EnableWindow(btnCancel, FALSE);
+			if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+			{
+				logger("Отмена изменений завершилась неудачей", "ERROR");
+			}
+			EndDialog(dlg, 0);
+			return;
+		}
+		str = "Проверка работы УТМ 1 успешно завершена";
+		logger(str, "INFO");
+	}
+	else // иначе продолжаем
+	{
+		int countPort = 0; // потому что массив портов развернут в другую сторону
+
+		// УСТАНОВКА ВСЕХ УТМ
+		for (int i = countUTM; i > 1; --i)
+		{
+			// копируем УТМы
+			str = "Копируем УТМ " + std::to_string(i);
+			SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, str.c_str());
+			logger(str, "INFO");
+			SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+			if (copyFolderUTM(i) == 1)
+			{
+				error = "Не удалось скопировать папку УТМ! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
+				MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+				logger(error, "ERROR");
+				// Делаем не активной кнопку отмены
+				EnableWindow(btnCancel, FALSE);
+				if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+				{
+					logger("Отмена изменений завершилась неудачей", "ERROR");
+				}
+				EndDialog(dlg, 0);
+				return;
+			}
+			str = "Копирование УТМ " + std::to_string(i) + " успешно завершена";
+			logger(str, "INFO");
+
+			// проверка флага
+			if (flagInstallUTM == false)
+			{
+				logger("Поток установки отменен пользователем", "INFO");
+				SetEvent(evt);
+				return;
+			}
+
+			// копируем батники
+			str = "Копируем батники в УТМ " + std::to_string(i);
+			SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, str.c_str());
+			logger(str, "INFO");
+			SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+			if (copyBatFiles(i) == 1)
+			{
+				error = "Не удалось скопировать батники в УТМ! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
+				MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+				logger(error, "ERROR");
+				// Делаем не активной кнопку отмены
+				EnableWindow(btnCancel, FALSE);
+				if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+				{
+					logger("Отмена изменений завершилась неудачей", "ERROR");
+				}
+				EndDialog(dlg, 0);
+				return;
+			}
+			str = "Копирование батников в УТМ " + std::to_string(i) + " успешно завершена";
+			logger(str, "INFO");
+
+			// проверка флага
+			if (flagInstallUTM == false)
+			{
+				logger("Поток установки отменен пользователем", "INFO");
+				SetEvent(evt);
+				return;
+			}
+
+			// исправляем конфиги УТМ
+			str = "Исправляем конфиги в УТМ " + std::to_string(i);
+			SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, str.c_str());
+			logger(str, "INFO");
+			if (changePortConfigUTM(i, ports[countPort]) == 1)
+			{
+				error = "Не удалось изменить конфиг в УТМ! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
+				MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+				logger(error, "ERROR");
+				// Делаем не активной кнопку отмены
+				EnableWindow(btnCancel, FALSE);
+				if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+				{
+					logger("Отмена изменений завершилась неудачей", "ERROR");
+				}
+				EndDialog(dlg, 0);
+				return;
+			}
+			++countPort;
+			str = "Исправление конфигов в УТМ " + std::to_string(i) + " успешно завершена";
+			logger(str, "INFO");
+
+			// проверка флага
+			if (flagInstallUTM == false)
+			{
+				logger("Поток установки отменен пользователем", "INFO");
+				SetEvent(evt);
+				return;
+			}
+
+			// Устанавливаем службу УТМ
+			str = "Устанавливаем службу УТМ " + std::to_string(i);
+			SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, str.c_str());
+			logger(str, "INFO");
+			SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+			if (installServiceUTM(i) == 1)
+			{
+				error = "Не удалось установить службу УТМ! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
+				MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+				logger(error, "ERROR");
+				// Делаем не активной кнопку отмены
+				EnableWindow(btnCancel, FALSE);
+				if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+				{
+					logger("Отмена изменений завершилась неудачей", "ERROR");
+				}
+				EndDialog(dlg, 0);
+				return;
+			}
+			str = "Установка службы УТМ " + std::to_string(i) + " успешно завершена";
+			logger(str, "INFO");
+
+			// проверка флага
+			if (flagInstallUTM == false)
+			{
+				logger("Поток установки отменен пользователем", "INFO");
+				SetEvent(evt);
+				return;
+			}
+		}
+
+		// ЗАПУСК ВСЕХ УТМ
+		// проверка на невыбранные ридеры
+		std::vector<std::string> vecTokensNoChoose, vecAttrNoChoose;
+		if (vecTokens.size() != vectorNameReaders.size())
+		{
+			std::vector<std::string>::iterator it;
+			for (unsigned int i = 0; i < vecTokens.size(); ++i)
+			{
+				it = std::find(vectorNameReaders.begin(), vectorNameReaders.end(), vecTokens[i]);
+				if (it == vectorNameReaders.end())
+				{
+					vecTokensNoChoose.push_back(vecTokens[i]);
+					vecAttrNoChoose.push_back(vecAttr[i]);
+				}
+			}
+		}
+
+		// проверка флага
+		if (flagInstallUTM == false)
+		{
+			logger("Поток установки отменен пользователем", "INFO");
+			SetEvent(evt);
+			return;
+		}
+
+		// Удаляем все ридеры
+		str = "Удаление всех ридеров";
+		SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, str.c_str());
+		logger(str, "INFO");
+		SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+		for (std::string elem : vecTokens)
+		{
+			err = deleteReader(elem, ctx);
+			if (err != 0)
+			{
+				error = "Удаление всех ридеров завершилось ошибкой! Код ошибки - " + std::to_string(err) + "\nБудет выполнена отмена изменений";
+				MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+				logger(error, "ERROR");
+				// Делаем не активной кнопку отмены
+				EnableWindow(btnCancel, FALSE);
+				if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+				{
+					logger("Отмена изменений завершилась неудачей", "ERROR");
+				}
+				EndDialog(dlg, 0);
+				return;
+			}
+		}
+		logger("Удаление всех ридеров успешно завершено", "INFO");
+
+		// проверка флага
+		if (flagInstallUTM == false)
+		{
+			logger("Поток установки отменен пользователем", "INFO");
+			SetEvent(evt);
+			return;
+		}
+
+		// Добавляем ридеры, начиная с конца, в конце не выбранные ридеры, далее выбранные с конца
+		// И запускаем УТМы
+		str = "Запускаем службы УТМ";
+		SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, str.c_str());
+		logger(str, "INFO");
+		SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+
+		// добавление ридеров и запуск служб УТМ
+		// вначале добавляем не выбранные ридеры
+		std::string nameReader, numberService;
+		int countReader = 1;
+		for (unsigned int i = 0; i < vecTokensNoChoose.size(); ++i, ++countReader)
+		{
+			nameReader = "Aktiv Rutoken ECP " + std::to_string(vecTokens.size() - countReader);
+			str = "Добавляем ридер " + nameReader;
+			SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, str.c_str());
+			logger(str, "INFO");
+			SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+			err = addNameReader(nameReader, ctx, vecAttrNoChoose[i]);
+			if (err != 0)
+			{
+				error = "Добавление ридера " + nameReader + " завершилось ошибкой! Код ошибки - " + std::to_string(err) + "\nБудет выполнена отмена изменений";
+				MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+				logger(error, "ERROR");
+				// Делаем не активной кнопку отмены
+				EnableWindow(btnCancel, FALSE);
+				if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+				{
+					logger("Отмена изменений завершилась неудачей", "ERROR");
+				}
+				EndDialog(dlg, 0);
+				return;
+			}
+
+			// проверка флага
+			if (flagInstallUTM == false)
+			{
+				logger("Поток установки отменен пользователем", "INFO");
+				SetEvent(evt);
+				return;
+			}
+		}
+		logger("Добавление не выбранных ридеров успешно завершено", "INFO");
+		// далее добавляем выбранные ридеры с конца и запускаем утмы
+		for (unsigned int i = 0; i < vectorNameReaders.size(); ++i, ++countReader)
+		{
+			if (i == 1) // этот процесс не сразу появляеться, поэтому завершаем на втором утме
+			{
+				// Завершаем процесс javaw.exe
+				if (killProcessJava() == 1)
+				{
+					error = "Не удалось завершить процесс javaw.exe! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
+					MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+					logger(error, "ERROR");
+					// Делаем не активной кнопку отмены
+					EnableWindow(btnCancel, FALSE);
+					if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+					{
+						logger("Отмена изменений завершилась неудачей", "ERROR");
+					}
+					EndDialog(dlg, 0);
+					return;
+				}
+				logger("Завершили процесс javaw.exe", "INFO");
+
+				// проверка флага
+				if (flagInstallUTM == false)
+				{
+					logger("Поток установки отменен пользователем", "INFO");
+					SetEvent(evt);
+					return;
+				}
+
+				// убираем его из автозагрузки
+				if (deleteFileUTMlnk() == 1)
+				{
+					error = "Не удалось удалить UTM.lnk! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
+					MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+					logger(error, "ERROR");
+					// Делаем не активной кнопку отмены
+					EnableWindow(btnCancel, FALSE);
+					if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+					{
+						logger("Отмена изменений завершилась неудачей", "ERROR");
+					}
+					EndDialog(dlg, 0);
+					return;
+				}
+				logger("Удалили UTM.lnk из автозагрузки", "INFO");
+			}
+
+			// проверка флага
+			if (flagInstallUTM == false)
+			{
+				logger("Поток установки отменен пользователем", "INFO");
+				SetEvent(evt);
+				return;
+			}
+
+			// добавление ридера
+			nameReader = "Aktiv Rutoken ECP " + std::to_string(vecTokens.size() - countReader);
+			str = "Добавляем ридер " + nameReader;
+			SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, str.c_str());
+			logger(str, "INFO");
+			SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+			err = addNameReader(nameReader, ctx, vectorAttrReaders[i]);
+			if (err != 0)
+			{
+				error = "Добавление ридера " + nameReader + " завершилось ошибкой! Код ошибки - " + std::to_string(err) + "\nБудет выполнена отмена изменений";
+				MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+				logger(error, "ERROR");
+				// Делаем не активной кнопку отмены
+				EnableWindow(btnCancel, FALSE);
+				if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+				{
+					logger("Отмена изменений завершилась неудачей", "ERROR");
+				}
+				EndDialog(dlg, 0);
+				return;
+			}
+			logger("Добавление ридера " + nameReader + " успешно завершено", "INFO");
+
+			// проверка флага
+			if (flagInstallUTM == false)
+			{
+				logger("Поток установки отменен пользователем", "INFO");
+				SetEvent(evt);
+				return;
+			}
+
+			// запуск службы утм
+			numberService = std::to_string(vecTokens.size() - countReader + 1);
+			if (numberService == "1")
+			{
+				str = "Запуск службы Transport";
+				numberService = "";
+			}
+			else
+			{
+				str = "Запуск службы Transport " + numberService;
+			}
+			SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, str.c_str());
+			logger(str, "INFO");
+			SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+			err = startServiceUTM("Transport" + numberService);
+			if (err != 0)
+			{
+				error = "Ошибка запуска службы Transport" + numberService + "! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
+				MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+				logger(error, "ERROR");
+				// Делаем не активной кнопку отмены
+				EnableWindow(btnCancel, FALSE);
+				if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+				{
+					logger("Отмена изменений завершилась неудачей", "ERROR");
+				}
+				EndDialog(dlg, 0);
+				return;
+			}
+			str = "Запуск службы Transport " + numberService + " успешно завершена";
+			logger(str, "INFO");
+			Sleep(500);
+
+			// проверка флага
+			if (flagInstallUTM == false)
+			{
+				logger("Поток установки отменен пользователем", "INFO");
+				SetEvent(evt);
+				return;
+			}
+
+			// проверка работы утм
+			str = "Проверка работы УТМ " + numberService + " (запрос на главную страницу)";
+			SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, str.c_str());
+			logger(str, "INFO");
+			SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
+			err = checkHomePageUTM(ports[i], flagStartUTM);
+			if (err == 2)
+			{
+				logger("Поток установки отменен пользователем", "INFO");
+				SetEvent(evt);
+				return;
+			}
+			if (err != 0)
+			{
+				error = "Не удалось проверить работу УТМ " + numberService + "! Код ошибки - " + std::to_string(err) + "\nФункция завершилась по таймауту\nБудет выполнена отмена изменений";
+				MessageBox(dlg, error.c_str(), "Ошибка", MB_ICONERROR);
+				logger(error, "ERROR");
+				// Делаем не активной кнопку отмены
+				EnableWindow(btnCancel, FALSE);
+				if (backChange(vecTokens, vecAttr, ctx, hDlg) != 0)
+				{
+					logger("Отмена изменений завершилась неудачей", "ERROR");
+				}
+				EndDialog(dlg, 0);
+				return;
+			}
+			str = "Проверка работы УТМ " + numberService + " успешно завершена";
+			logger(str, "INFO");
+		}
+
+		str = "Запуск служб УТМ успешно завершена";
+		logger(str, "INFO");
+	}
+
+	SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_SETPOS, 100, 0);
+	flagChangeStatic = false;
+	MessageBox(dlg, "Установка УТМ успешно завершена!", "Успешно", MB_ICONINFORMATION);
+	logger("Установка УТМ успешно завершена!", "INFO");
+	EndDialog(dlg, 0);
 }
 
-// РџРѕР»СѓС‡РµРЅРёРµ РїР°СЂР°РјРµС‚СЂРѕРІ РґР»СЏ СѓСЃС‚Р°РЅРѕРІРєРё
-void InstallUTM::setParametrsInstall(QVector<QString> &vectorDeviceChoose,
-                                     QVector<QString> &vectorPortChoose,
-                                     QMap<QString, QString> &mapParametrsInstall,
-                                     QString &fileUTM,
-                                     SCARDCONTEXT &hContext,
-                                     QString &fileAppPath,
-                                     QVector<QString> &serialNumberDevice)
+// перебор многоточия в статике, подаем вид, что то делаем
+void changeStaticText(HWND dlg)
 {
-    installDeviceChoose = vectorDeviceChoose;
-    installPortChoose = vectorPortChoose;
-    mapinstallParametrsInstall = mapParametrsInstall;
-    installFileUTM = fileUTM;
-    installHContext = hContext;
-    installFileAppPath = fileAppPath;
-    installSerialNumberDevice = serialNumberDevice;
+	while (flagChangeStatic)
+	{
+		SetDlgItemText(dlg, IDC_STATIC_POINT, "");
+		Sleep(500);
+		SetDlgItemText(dlg, IDC_STATIC_POINT, ".");
+		Sleep(500);
+		SetDlgItemText(dlg, IDC_STATIC_POINT, "..");
+		Sleep(500);
+		SetDlgItemText(dlg, IDC_STATIC_POINT, "...");
+		Sleep(500);
+	}
 }
 
-// РџСЂРµСЂС‹РІР°РЅРёРµ СѓСЃС‚Р°РЅРѕРІРєРё
-void InstallUTM::set_status_thread(bool status_thread)
+// запуск и ожидание завершения процесса, установка УТМ
+int startProcessInstallUTM(std::string fileUTM)
 {
-    if (m_status_thread == status_thread)
-        return;
+	STARTUPINFO si;
+	PROCESS_INFORMATION pi;
+	ZeroMemory(&si, sizeof(si));
+	si.cb = sizeof(si);
+	ZeroMemory(&pi, sizeof(pi));
 
-    m_status_thread = status_thread;
+	int err = CreateProcess(fileUTM.c_str(), NULL, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
+	if (err == 0)
+	{
+		return 1;
+	}
+	WaitForSingleObject(pi.hProcess, INFINITE);
+
+	CloseHandle(pi.hThread);
+	CloseHandle(pi.hProcess);
+
+	return 0;
 }
 
-// РЈСЃС‚Р°РЅРѕРІРєР°
-void InstallUTM::installUTM()
+// копируем папку УТМ
+int CopyFolder(std::string src, std::string dst)
 {
-    /* РЈРґР°Р»СЏСЋС‚СЃСЏ РІСЃРµ СЂРёРґРµСЂС‹, Рё РґРѕР±Р°РІР»СЏСЋС‚СЃСЏ РІС‹Р±СЂР°РЅРЅС‹Рµ СЂРёРґРµСЂС‹ РїРѕ РѕС‡РµСЂРµРґРё, РЅР°С‡РёРЅР°СЏ СЃ РєРѕРЅС†Р°
-     * РїСЂРё СЌС‚РѕРј РјС‹ РІС‹СЃС‚СЂР°РёРІР°РµРј РїСЂР°РІРёР»СЊРЅСѓСЋ РѕС‡РµСЂРµРґСЊ СЂРёРґРµСЂРѕРІ
-     *
-     * РЅРѕРјРµСЂ РїРѕСЃР»РµРґРЅРµРіРѕ РІС‹Р±СЂР°РЅРЅРѕРіРѕ СЂРёРґРµСЂР° СЃС‡РёС‚Р°РµС‚СЊСЃСЏ С‚Р°Рє
-     * (<РґР»РёРЅР° РІРµРєС‚РѕСЂР° РІСЃРµС… СЂРёРґРµСЂРѕРІ> - (<РґР»РёРЅР° РІРµРєС‚РѕСЂР° РІСЃРµС… СЂРёРґРµСЂРѕРІ> - <РґР»РёРЅР° РІРµРєС‚РѕСЂР° РІС‹Р±СЂР°РЅРЅС‹С… СЂРёРґРµСЂРѕРІ>)) - 1
-     * РЅРѕРјРµСЂ РєР°Р¶РґРѕРіРѕ РїРѕСЃР»РµРґСѓСЋС‰РµРіРѕ СЂРёРґРµСЂР° СѓРјРµРЅСЊС€Р°РµС‚СЃСЏ РЅР° 1
-     *
-     * С‚Р°РєРёРј РѕР±СЂР°Р·РѕРј Р±СѓРґРµС‚ РІС‹СЃС‚СЂРѕРµРЅР° РїСЂР°РІРёР»СЊРЅР°СЏ РѕС‡РµСЂРµРґСЊ СЃ РєРѕРЅС†Р° Рє РЅР°С‡Р°Р»Сѓ
-     * РЅРµ РІС‹Р±СЂР°РЅРЅС‹Рµ СЂРёРґРµСЂС‹ Р±СѓРґСѓС‚ РІ РєРѕРЅС†Рµ
-     */
+	WIN32_FIND_DATA FindFileData; // структура для поиска файлов
+	HANDLE hFind;
 
-    QProcess *process = new QProcess();
-    int progress = 5;
-    QByteArray fileData; // РґР»СЏ С‡С‚РµРЅРёСЏ РєРѕРЅС„РёРіР° СѓС‚Рј
-    QString srcPath = "C:/UTM";
-    QString urlUTM = "http://localhost:";
-    int numService = installDeviceChoose.size(); // РЅРѕРјРµСЂ СЃР»СѓР¶Р±С‹ РЈРўРњ
-    QString nameReader = "Aktiv Rutoken ECP "; // С€Р°Р±Р»РѕРЅ РёРјРµРЅРё СЂРёРґРµСЂР°
-    int numberReader = (mapinstallParametrsInstall.size() - (mapinstallParametrsInstall.size() - installDeviceChoose.size())) - 1; // РЅРѕРјРµСЂ СЂРёРґРµСЂР°
-    int numberReaderOff = mapinstallParametrsInstall.size() - 1; // РЅРѕРјРµСЂ РґР»СЏ РЅРµ РІС‹Р±СЂР°РЅРЅС‹С… СЂРёРґРµСЂРѕРІ
-    int startPortCount = installPortChoose.size() - 1; // РёРЅРґРµРєСЃ РїРѕСЂС‚Р° РІ РІРµРєС‚РѕСЂРµ
-    int result; // СЂРµР·СѓР»СЊС‚Р°С‚С‹ С„СѓРЅРєС†РёР№
+	CreateDirectory(dst.c_str(), NULL); // создаём папку, куда копировать
+	std::string filter = src + "\\*"; // фильтр поиска
+	
+	hFind = FindFirstFile(filter.c_str(), &FindFileData); // поиск файлов
+	if (hFind == NULL)
+	{
+		return 1;
+	}
 
-    emit signalProgressBar("РЈРґР°Р»СЏРµРј РІСЃРµ СЂРёРґРµСЂС‹...", progress);
-    // РЈРґР°Р»СЏРµРј РІСЃРµ СЂРёРґРµСЂС‹
-    for (QMap<QString, QString>::iterator i = mapinstallParametrsInstall.begin(); i != mapinstallParametrsInstall.end(); ++i)
-    {
-        result = Control::removeNameReader(i.value(), installHContext);
-        if (result)
-        {
-            delete process;
-            emit signalInstallUTMErrorCode("РћС€РёР±РєР° removeNameReader, РєРѕРґ РѕС€РёР±РєРё - " + QString::number(result), result);
-            return;
-        }
-    }
-    progress += 5;
+	do
+	{
+		if (FindFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) // если нашли папку
+		{
+			if (strcmp(FindFileData.cFileName, ".") && strcmp(FindFileData.cFileName, ".."))
+			{
+				// если есть подпапки, ищем дальше там через рекурсию
+				std::string srs2 = src + "\\" + std::string(FindFileData.cFileName) + "\\";
+				std::string dst2 = dst + "\\" + std::string(FindFileData.cFileName);
+				CopyFolder(srs2, dst2);
+			}
+		}
+		else // нашли файл
+		{
+			std::string srs2 = src + "\\" + std::string(FindFileData.cFileName);
+			std::string dst2 = dst + "\\" + std::string(FindFileData.cFileName);
+			if (CopyFile(srs2.c_str(), dst2.c_str(), TRUE) == 0) // копируем файл
+			{
+				return 1;
+			}
+		}
+	} while (FindNextFile(hFind, &FindFileData)); // пока есть что копировать
 
-    // Р—Р°РїСѓСЃРєР°РµРј СѓСЃС‚Р°РЅРѕРІРєСѓ СѓС‚Рј
-    emit signalProgressBar("РЈСЃС‚Р°РЅР°РІР»РёРІР°РµРј РЈРўРњ...", progress);
-    int count = 3; // РєРѕР» РІРѕ РїРѕРїС‹С‚РѕРє РґР»СЏ СѓСЃС‚Р°РЅРѕРІРєРё
-    do
-    {
-        if (!m_status_thread)
-        {
-            delete process;
-            emit signalInstallUTMErrorCode("РћРїРµСЂР°С†РёСЏ СѓСЃС‚Р°РЅРѕРІРєРё РїСЂРµСЂРІР°РЅР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј", 2);
-            return;
-        }
-        result = Control::executeCommand(process, "\"" + installFileUTM + "\"");
-        if(result)
-        {
-            if (!m_status_thread)
-            {
-                delete process;
-                emit signalInstallUTMErrorCode("РћРїРµСЂР°С†РёСЏ СѓСЃС‚Р°РЅРѕРІРєРё РїСЂРµСЂРІР°РЅР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј", 2);
-                return;
-            }
-            result = Control::executeCommand(process, "taskkill /IM silent-setup-4.2.0-b2466.tmp /F");
-            if(result)
-            {
-                if (!m_status_thread)
-                {
-                    delete process;
-                    emit signalInstallUTMErrorCode("РћРїРµСЂР°С†РёСЏ СѓСЃС‚Р°РЅРѕРІРєРё РїСЂРµСЂРІР°РЅР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј", 2);
-                    return;
-                }
-                emit signalInstallUTMErrorCode("РќРµ СѓРґР°Р»РѕСЃСЊ СѓСЃС‚Р°РЅРѕРІРёС‚СЊ РЈРўРњ, С„СѓРЅРєС†РёСЏ РЅРµ РѕС‚РІРµС‚РёР»Р° Рё Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РїРѕ С‚Р°Р№РјР°СѓС‚Сѓ", 3);
-                return;
-            }
-            --count;
-            continue;
-        }
-        else
-        {
-            break;
-        }
-    }
-    while (count > 0);
-    progress += 5;
+	FindClose(hFind); // очистка
+	return 0;
+}
 
-    // РџРѕРґРјРµРЅСЏРµРј Р±Р°С‚РЅРёРєРё РІ СѓС‚Рј
-    emit signalProgressBar("РџРѕРґРјРµРЅСЏРµРј Р±Р°С‚РЅРёРєРё РІ РЈРўРњ...", progress);
-    Control::replaceBatUTM(installFileAppPath + "/transport/delete.bat",
-                           installFileAppPath + "/transport/install.bat",
-                           installFileAppPath + "/transport/run.bat",
-                           installFileAppPath + "/transport/stop.bat",
-                           srcPath +"/transporter/bin/delete.bat",
-                           srcPath +"/transporter/bin/install.bat",
-                           srcPath +"/transporter/bin/run.bat",
-                           srcPath +"/transporter/bin/stop.bat");
-    if (!m_status_thread)
-    {
-        delete process;
-        emit signalInstallUTMErrorCode("РћРїРµСЂР°С†РёСЏ СѓСЃС‚Р°РЅРѕРІРєРё РїСЂРµСЂРІР°РЅР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј", 2);
-        return;
-    }
-    progress += 5;
+// копируем папку УТМ
+int copyFolderUTM(int numberUTM)
+{
+	std::string src = "C:\\UTM";
+	std::string dst = "C:\\UTM_" + std::to_string(numberUTM);
 
-    // Р”РµР»Р°РµРј РєРѕРїРёРё СѓС‚Рј
-    for (int i = 2; i <= installDeviceChoose.size(); ++i)
-    {
-        QString num = QString::number(i);
-        QString dstPath = srcPath + "_" + num; // РїСѓС‚СЊ РґРѕ СЃР»РµРґСѓСЋС‰РµРіРѕ СѓС‚Рј
+	if (CopyFolder(src, dst) == 1)
+	{
+		return 1;
+	}
 
-        emit signalProgressBar("РљРѕРїРёСЂСѓРµРј РЈРўРњ " + num + "...", progress);
-        result = Control::copyPath(srcPath, dstPath);
-        if (result)
-        {
-            delete process;
-            emit signalInstallUTMErrorCode("РќРµ СѓРґР°Р»РѕСЃСЊ СЃРґРµР»Р°С‚СЊ РєРѕРїРёСЋ РЈРўРњ, С„СѓРЅРєС†РёСЏ РЅРµ РѕС‚РІРµС‚РёР»Р° Рё Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РїРѕ С‚Р°Р№РјР°СѓС‚Сѓ", 3);
-            return;
-        }
-        if (!m_status_thread)
-        {
-            delete process;
-            emit signalInstallUTMErrorCode("РћРїРµСЂР°С†РёСЏ СѓСЃС‚Р°РЅРѕРІРєРё РїСЂРµСЂРІР°РЅР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј", 2);
-            return;
-        }
+	return 0;
+}
 
-        // Р РµРґР°РєС‚РёСЂСѓРµРј РїРѕСЂС‚ РІ РєРѕРЅС„РёРіРµ СѓС‚Рј
-        emit signalProgressBar("Р РµРґР°РєС‚РёСЂСѓРµРј РїРѕСЂС‚ РІ РєРѕРЅС„РёРіРµ РЈРўРњ " + num + "...", progress);
-        result = Control::replacePortUTM(fileData, dstPath +"/transporter/conf/transport.properties", installPortChoose[i - 1]);
-        if (result)
-        {
-            delete process;
-            emit signalInstallUTMErrorCode("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ С„Р°Р№Р» transport.properties, С„СѓРЅРєС†РёСЏ РЅРµ РѕС‚РІРµС‚РёР»Р° Рё Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РїРѕ С‚Р°Р№РјР°СѓС‚Сѓ", 3);
-            return;
-        }
-        if (!m_status_thread)
-        {
-            delete process;
-            emit signalInstallUTMErrorCode("РћРїРµСЂР°С†РёСЏ СѓСЃС‚Р°РЅРѕРІРєРё РїСЂРµСЂРІР°РЅР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј", 2);
-            return;
-        }
+// копирование батников в УТМ
+int copyBatFiles(int numberUTM)
+{
+	std::string srcPath = pathExe + "transport_bat\\";
+	std::string dstPath = "C:\\UTM_" + std::to_string(numberUTM) + "\\transporter\\bin\\";
+	std::vector<std::string> vecBat = { "delete.bat", "install.bat", "run.bat", "stop.bat", "terminal.bat", "terminal-prod.bat" };
 
-        // РЈСЃС‚Р°РЅР°РІР»РёРІР°РµРј СЃР»СѓР¶Р±Сѓ
-        emit signalProgressBar("РЈСЃС‚Р°РЅР°РІР»РёРІР°РµРј СЃР»СѓР¶Р±Сѓ РЈРўРњ " + num + "...", progress);
-        result = Control::executeCommand(process, dstPath + "/transporter/bin/install.bat Transport_" + num);
-        if(result)
-        {
-            delete process;
-            emit signalInstallUTMErrorCode("РќРµ СѓРґР°Р»РѕСЃСЊ СѓСЃС‚Р°РЅРѕРІРёС‚СЊ СЃР»СѓР¶Р±Сѓ Transport_" + num +", С„СѓРЅРєС†РёСЏ РЅРµ РѕС‚РІРµС‚РёР»Р° Рё Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РїРѕ С‚Р°Р№РјР°СѓС‚Сѓ", 3);
-            return;
-        }
-        if (!m_status_thread)
-        {
-            delete process;
-            emit signalInstallUTMErrorCode("РћРїРµСЂР°С†РёСЏ СѓСЃС‚Р°РЅРѕРІРєРё РїСЂРµСЂРІР°РЅР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј", 2);
-            return;
-        }
-        progress += 5;
-    }
+	for (std::string elem : vecBat)
+	{
+		if (CopyFile((srcPath + elem).c_str(), (dstPath + elem).c_str(), FALSE) == 0) // копируем файл
+		{
+			return 1;
+		}
+	}
 
-    // Р РµРґР°РєС‚РёСЂСѓРµРј РїРѕСЂС‚ РІ РєРѕРЅС„РёРіРµ РїРµСЂРІРѕРіРѕ СѓС‚Рј
-    emit signalProgressBar("Р РµРґР°РєС‚РёСЂСѓРµРј РїРѕСЂС‚ РІ РєРѕРЅС„РёРіРµ РЈРўРњ 1...", progress);
-    result = Control::replacePortUTM(fileData, srcPath +"/transporter/conf/transport.properties", installPortChoose[0]);
-    if (result)
-    {
-        delete process;
-        emit signalInstallUTMErrorCode("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ С„Р°Р№Р» transport.properties, С„СѓРЅРєС†РёСЏ РЅРµ РѕС‚РІРµС‚РёР»Р° Рё Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РїРѕ С‚Р°Р№РјР°СѓС‚Сѓ", 3);
-        return;
-    }
-    progress += 5;
+	return 0;
+}
 
-    //Р—Р°РїСѓСЃРє РЈРўРњ
-    QSettings setting("config.ini", QSettings::IniFormat);
-    setting.clear();
-    for(; numberReader + 1 > 0; --numberReader)
-    {
-        if (installDeviceChoose.empty())
-        {
-            break;
-        }
-        // Р”РѕР±Р°РІР»СЏРµРј РїРѕСЃР»РµРґРЅРёР№ РІС‹Р±СЂР°РЅРЅС‹Р№ СЂРёРґРµСЂ СЃ РїСЂР°РІРёР»СЊРЅС‹Рј РїРѕСЂСЏРґРєРѕРІС‹Рј РЅРѕРјРµСЂРѕРј, СѓРґР°Р»СЏРµРј РµРіРѕ РёР· РІРµРєС‚РѕСЂР° Рё РёР· РјР°РїР°
-        for (QMap<QString, QString>::iterator i = mapinstallParametrsInstall.begin(); i != mapinstallParametrsInstall.end();)
-        {
-            if (i.value() == installDeviceChoose.back())
-            {
-                result = Control::addNameReader(nameReader + QString::number(numberReader), installHContext, i.key());
-                if (result)
-                {
-                    delete process;
-                    emit signalInstallUTMErrorCode("РћС€РёР±РєР° addNameReader, РєРѕРґ РѕС€РёР±РєРё - " + QString::number(result), result);
-                    return;
-                }
-                if (numService == 1)
-                {
-                    setting.setValue("UTM/nameReader", nameReader + QString::number(numberReader));
-                    setting.setValue("UTM/attrReader", i.key());
-                    setting.setValue("UTM/serialNumber", installSerialNumberDevice[i.value().right(1).toInt()]);
-                }
-                else
-                {
-                    setting.setValue("UTM_" + QString::number(numService) + "/nameReader", nameReader + QString::number(numberReader));
-                    setting.setValue("UTM_" + QString::number(numService) + "/attrReader", i.key());
-                    setting.setValue("UTM_" + QString::number(numService) + "/serialNumber", installSerialNumberDevice[i.value().right(1).toInt()]);
-                }
-                installDeviceChoose.pop_back();
-                i = mapinstallParametrsInstall.erase(i);
-                count = 0;
+// исправление конфигов УТМ (замена портов)
+int changePortConfigUTM(int numberUTM, std::string port)
+{
+	std::string config = "C:\\UTM_" + std::to_string(numberUTM) + "\\transporter\\conf\\transport.properties";
 
-                break;
-            }
-            else
-            {
-                ++i;
-                ++count;
-            }           
-        }
+	std::ifstream fin;
+	fin.open(config);
+	if (fin.is_open())
+	{
+		std::string word_source_web = "8080";
+		std::string word_source_transport = "8192";
+		std::string word_source_agent = "8194";
+		std::string word_destinate_transport = std::to_string(atoi(word_source_transport.c_str()) - numberUTM);
+		std::string word_destinate_agent = std::to_string(atoi(word_source_agent.c_str()) + numberUTM);
+		std::string temp;
 
-        // Р—Р°РїСѓСЃРєР°РµРј СЃР»СѓР¶Р±Сѓ СѓС‚РјР°
-        emit signalProgressBar("Р—Р°РїСѓСЃРєР°РµРј СЃР»СѓР¶Р±Сѓ РЈРўРњ " + QString::number(numService) + "...", progress);
-        if (numService == 1)
-        {
-            result = Control::executeCommand(process, "net start Transport");
-            if(result)
-            {
-                delete process;
-                emit signalInstallUTMErrorCode("РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ СЃР»СѓР¶Р±Сѓ Transport, С„СѓРЅРєС†РёСЏ РЅРµ РѕС‚РІРµС‚РёР»Р° Рё Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РїРѕ С‚Р°Р№РјР°СѓС‚Сѓ", 3);
-                return;
-            }
-        }
-        else
-        {
-            result = Control::executeCommand(process, "net start Transport_" + QString::number(numService));
-            if(result)
-            {
-                delete process;
-                emit signalInstallUTMErrorCode("РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ СЃР»СѓР¶Р±Сѓ Transport_" + QString::number(numService) +", С„СѓРЅРєС†РёСЏ РЅРµ РѕС‚РІРµС‚РёР»Р° Рё Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РїРѕ С‚Р°Р№РјР°СѓС‚Сѓ", 3);
-                return;
-            }
-        }
-        // РџСЂРѕРІРµСЂСЏРµРј РґРѕСЃС‚СѓРїРЅРѕСЃС‚СЊ СЃС‚СЂР°РЅРёС‡РєРё РЈРўРњ
-        int count = 60;
-        while(m_status_thread)
-        {
-            QString result = Control::check_utm(urlUTM + installPortChoose[startPortCount]);
-            if (result == "")
-            {
-                Sleep(1000);
-                --count;
-                continue;
-            }
-            else
-            {
-                break;
-            }
-        }
-        if (count == 0)
-        {
-            delete process;
-            emit signalInstallUTMErrorCode("РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ СЃР»СѓР¶Р±Сѓ Transport, С„СѓРЅРєС†РёСЏ РЅРµ РѕС‚РІРµС‚РёР»Р° Рё Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РїРѕ С‚Р°Р№РјР°СѓС‚Сѓ", 3);
-            return;
-        }
-        if (!m_status_thread)
-        {
-            delete process;
-            emit signalInstallUTMErrorCode("РћРїРµСЂР°С†РёСЏ СѓСЃС‚Р°РЅРѕРІРєРё РїСЂРµСЂРІР°РЅР° РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј", 2);
-            return;
-        }
+		// читаем построчно
+		while (fin)
+		{
+			std::string str;
+			getline(fin, str, '\n');
+			if (!fin) break;
 
-        emit signalProgressBar("Р–РґРµРј РїРѕРєР° РЈРўРњ РѕС‚РґСѓРїР»РёС‚СЃСЏ, Р±С‹РІР°РµС‚, Р·Р°Р»РёРїР°РµС‚...", progress);
-        Sleep(5000); // Р¶РґРµРј РїРѕРєР° РЈРўРњ РѕС‚РґСѓРїР»РёС‚СЃСЏ))
+			size_t position = 0;
 
-        if (numService == 1)
-        {
-            setting.setValue("UTM/port", installPortChoose[startPortCount]);
-        }
-        else
-        {
-            setting.setValue("UTM_" + QString::number(numService) + "/port", installPortChoose[startPortCount]);
-        }
+			while (position != std::string::npos)
+			{
+				size_t position_start = position;
 
-        --numService;
-        --startPortCount;
-        progress += 5;
-    }
+				position = str.find(word_source_web, position);
+				if (position != std::string::npos)
+				{   
+					temp += str.substr(position_start, position - position_start); // пишем до найденного
+					temp += port; // меняем слово
+					position += word_source_web.size(); // смещаем позицию на после замененного слова
+					break;
+				}
 
-    emit signalProgressBar("Р”РѕР±Р°РІР»СЏРµРј РЅРµ РІС‹Р±СЂР°РЅРЅС‹Рµ СЂРёРґРµСЂС‹...", progress);
-    // Р”РѕР±Р°РІР»СЏРµРј РЅРµ РІС‹Р±СЂР°РЅРЅС‹Рµ СЂРёРґРµСЂС‹
-    count = 1;
-    for (QMap<QString, QString>::iterator i = mapinstallParametrsInstall.begin(); i != mapinstallParametrsInstall.end();)
-    {
-        result = Control::addNameReader(nameReader + QString::number(numberReaderOff), installHContext, i.key());
-        if (result)
-        {
-            delete process;
-            emit signalInstallUTMErrorCode("РћС€РёР±РєР° addNameReader, РєРѕРґ РѕС€РёР±РєРё - " + QString::number(result), result);
-            return;
-        }
-        ++count;
-        --numberReaderOff;
-        ++i;
-    }
+				position = 0;
+				position = str.find(word_source_transport, position);
+				if (position != std::string::npos)
+				{
+					temp += str.substr(position_start, position - position_start); // пишем до найденного
+					temp += word_destinate_transport; // меняем слово
+					position += word_source_transport.size(); // смещаем позицию на после замененного слова
+					break;
+				}
 
-    delete process;
-    progress = 100;
-    emit signalProgressBar("РЈРўРњС‹ СѓСЃРїРµС€РЅРѕ СѓСЃС‚Р°РЅРѕРІР»РµРЅС‹...", progress);
-    emit signalInstallUTMErrorCode("РЈРўРњС‹ СѓСЃРїРµС€РЅРѕ СѓСЃС‚Р°РЅРѕРІР»РµРЅС‹", 0);
+				position = 0;
+				position = str.find(word_source_agent, position);
+				if (position != std::string::npos)
+				{
+					temp += str.substr(position_start, position - position_start); // пишем до найденного
+					temp += word_destinate_agent; // меняем слово
+					position += word_source_agent.size(); // смещаем позицию на после замененного слова
+					break;
+				}
+
+				temp += str.substr(position_start, position - position_start);
+			}
+			temp += "\n";
+		}
+		fin.close();
+
+		
+		// перезаписываем файл
+		std::ofstream fout(config);
+		fout << temp.substr(0, temp.size());
+		fout.close();
+
+		return 0;
+	}
+
+	return 1;
+}
+
+// Исправляем батник в первом утм, чтобы служба не стартовала сама
+int changeInstallBatUTM()
+{
+	std::string config = "C:\\UTM\\transporter\\bin\\install.bat";
+
+	std::ifstream fin;
+	fin.open(config);
+	if (fin.is_open())
+	{
+		std::string word_source = "--Startup auto";
+		std::string word_destinate = "";
+		std::string temp;
+
+		// читаем построчно
+		while (fin)
+		{
+			std::string str;
+			getline(fin, str, '\n');
+			if (!fin) break;
+
+			size_t position = 0;
+
+			while (position != std::string::npos)
+			{
+				size_t position_start = position;
+
+				position = str.find(word_source, position);
+				if (position != std::string::npos)
+				{
+					temp += str.substr(position_start, position - position_start); // пишем до найденного
+					temp += word_destinate; // меняем слово
+					position += word_source.size(); // смещаем позицию на после замененного слова
+					break;
+				}
+				else
+				{
+					temp += str.substr(position_start, position - position_start);
+				}
+			}
+			temp += "\n";
+		}
+		fin.close();
+
+
+		// перезаписываем файл
+		std::ofstream fout(config);
+		fout << temp.substr(0, temp.size());
+		fout.close();
+
+		return 0;
+	}
+
+	return 1;
+}
+
+// Завершаем процесс javaw.exe
+int killProcessJava()
+{
+	HANDLE hSnapShot = CreateToolhelp32Snapshot(TH32CS_SNAPALL, NULL);
+	PROCESSENTRY32 pEntry;
+	pEntry.dwSize = sizeof(pEntry);
+	BOOL hRes = Process32First(hSnapShot, &pEntry);
+	while (hRes)
+	{
+		if (!strcmp(pEntry.szExeFile, "javaw.exe"))
+		{
+			HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, 0, (DWORD)pEntry.th32ProcessID);
+			if (hProcess != NULL)
+			{
+				TerminateProcess(hProcess, 9);
+				CloseHandle(hProcess);
+			}
+			else
+			{
+				return 1;
+			}
+		}
+		hRes = Process32Next(hSnapShot, &pEntry);
+	}
+	CloseHandle(hSnapShot);
+
+	return 0;
+}
+
+// Удаляем из автозагрузки
+int deleteFileUTMlnk()
+{
+	// удаляем файл
+	int resultDeleteFileA = DeleteFileA("C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\UTM.lnk");
+	switch (resultDeleteFileA)
+	{
+	case ERROR_FILE_NOT_FOUND:
+		break;
+	case ERROR_ACCESS_DENIED:
+		return 1;
+	case 0:
+		return 1;
+	default:
+		break;
+	}
+	return 0;
+}
+
+// Откат изменений при ошибке или отмене
+int backChange(std::vector<std::string> vecRutokens,
+	std::vector<std::string> vecAttrRutokens,
+	SCARDCONTEXT ctx,
+	HWND hDlg)
+{
+	logger("Отмена изменений", "INFO");
+	SetDlgItemText(hDlg, IDC_STATIC_PROGRESSBAR, "Отмена изменений");
+
+	int err;
+	std::string error;
+
+	// Удаляем все новый ридеры
+	for (std::string elem : vecRutokens)
+	{
+		err = deleteReader(elem, ctx);
+		if (err == ERROR_FILE_NOT_FOUND) // если нет такого ридера, продолжаем
+		{
+			continue;
+		}
+		if (err != 0)
+		{
+			flagChangeStatic = false;
+			error = "Отмена изменений. Удаление всех новых ридеров завершилось ошибкой! Код ошибки - " + std::to_string(err);
+			logger(error, "ERROR");
+			MessageBox(hDlg, error.c_str(), "Ошибка", MB_ICONERROR);
+			EndDialog(hDlg, 0);
+			return 1;
+		}
+	}
+	logger("Отмена изменений. Удаление всех новых ридеров успешно завершено", "INFO");
+
+	// Добавляем все старые ридеры
+	for (unsigned int i = 0; i < vecRutokens.size(); ++i)
+	{
+		err = addNameReader(vecRutokens[i], ctx, vecAttrRutokens[i]);
+		if (err != 0)
+		{
+			flagChangeStatic = false;
+			error = "Отмена изменений. Добавление всех старых ридеров завершилось ошибкой! Код ошибки - " + std::to_string(err);
+			logger(error, "ERROR");
+			MessageBox(hDlg, error.c_str(), "Ошибка", MB_ICONERROR);
+			EndDialog(hDlg, 0);
+			return 1;
+		}
+	}
+	logger("Отмена изменений. Добавление всех старых ридеров успешно завершено", "INFO");
+
+	// Удаление папок и служб УТМ
+	err = deleteUTMBackChange(hDlg);
+	if (err != 0)
+	{
+		flagChangeStatic = false;
+		error = "Отмена изменений. Не удалось удаление папок и служб УТМ, код ошибки " + std::to_string(GetLastError());
+		logger(error, "ERROR");
+		MessageBox(hDlg, error.c_str(), "Ошибка", MB_ICONERROR);
+		EndDialog(hDlg, 0);
+		return 1;
+	}
+	logger("Отмена изменений. Удаление папок и служб УТМ успешно завершено", "INFO");
+
+	return 0;
+}
+
+// Остановка и удаление служб и папок
+int deleteUTMBackChange(HWND hDlg)
+{
+	logger("Отмена изменений. Выполняеться удаление УТМ", "INFO");
+
+	std::string error;
+	int err;
+	std::string countUTM;
+
+	// получаем кол-во утм из конфига
+	err = readConfigCountUTM(countUTM);
+	if (err != 0)
+	{
+		flagChangeStatic = false;
+		error = "Отмена изменений. Не удалось получить кол-во УТМ из конфига, код ошибки " + std::to_string(err);
+		logger(error, "ERROR");
+		MessageBox(hDlg, error.c_str(), "Ошибка", MB_ICONERROR);
+		EndDialog(hDlg, 0);
+		return 1;
+	}
+
+	// удаление первого утм чере uninstaller
+	err = startProcessInstallUTM("C:\\UTM\\unins000.exe");
+	if (err == 1)
+	{
+		flagChangeStatic = false;
+		error = "Отмена изменений. Удаление УТМ завершилась ошибкой! Код ошибки - " + std::to_string(GetLastError());
+		MessageBox(hDlg, error.c_str(), "Ошибка", MB_ICONERROR);
+		logger(error, "ERROR");
+		EndDialog(hDlg, 0);
+		return 1;
+	}
+
+	// остановка служб и удаление УТМ
+	int intCountUTM = atoi(countUTM.c_str());
+	for (int i = intCountUTM; i > 0; --i)
+	{
+		if (i == 1)
+		{
+			break;
+		}
+		err = stopServiceUTM("Transport" + std::to_string(i));
+		if (err == ERROR_FILE_NOT_FOUND) // если нет такого, продолжаем
+		{
+			continue;
+		}
+		if (err != 0)
+		{
+			flagChangeStatic = false;
+			error = "Отмена изменений. Не удалось остановить службу Transport" + std::to_string(i) + ", код ошибки " + std::to_string(err);
+			MessageBox(hDlg, error.c_str(), "Ошибка", MB_ICONERROR);
+			logger(error, "ERROR");
+			EndDialog(hDlg, 0);
+			return 1;
+		}
+		Sleep(500);
+		err = deleteServiceUTM(i);
+		if (err == ERROR_FILE_NOT_FOUND) // если нет такого, продолжаем
+		{
+			continue;
+		}
+		if (err != 0)
+		{
+			flagChangeStatic = false;
+			error = "Отмена изменений. Не удалось удалить службу Transport" + std::to_string(i) + ", код ошибки " + std::to_string(GetLastError());
+			MessageBox(hDlg, error.c_str(), "Ошибка", MB_ICONERROR);
+			logger(error, "ERROR");
+			EndDialog(hDlg, 0);
+			return 1;
+		}
+		Sleep(500);
+		err = deleteFolderUTMBackChange("C:\\UTM_" + std::to_string(i));
+		if (err == ERROR_FILE_NOT_FOUND) // если нет такого, продолжаем
+		{
+			continue;
+		}
+		if (err != 0)
+		{
+			flagChangeStatic = false;
+			error = "Отмена изменений. Не удалось удалить C:\\UTM_" + std::to_string(i) + ", код ошибки " + std::to_string(GetLastError());
+			MessageBox(hDlg, error.c_str(), "Ошибка", MB_ICONERROR);
+			logger(error, "ERROR");
+			EndDialog(hDlg, 0);
+			return 1;
+		}
+	}
+
+	flagChangeStatic = false;
+	logger("Отмена изменений. Удаление УТМ успешно завершено", "INFO");
+	MessageBox(hDlg, "Отмена изменений. Удаление УТМ успешно завершено", "Успешно", MB_ICONINFORMATION);
+	EndDialog(hDlg, 0);
+
+	return 0;
+}
+
+// удалить папку утм
+int deleteFolderUTMBackChange(std::string src)
+{
+	WIN32_FIND_DATA FindFileData; // структура для поиска файлов
+	HANDLE hFind;
+
+	std::string filter = src + "\\*"; // фильтр поиска
+	std::string src2;
+
+	hFind = FindFirstFile(filter.c_str(), &FindFileData); // поиск файлов
+	if (hFind == NULL)
+	{
+		return 1;
+	}
+
+	do
+	{
+		if (FindFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) // если нашли папку
+		{
+			if (strcmp(FindFileData.cFileName, ".") && strcmp(FindFileData.cFileName, ".."))
+			{
+				// если есть подпапки, ищем дальше там через рекурсию
+				src2 = src + "\\" + std::string(FindFileData.cFileName) + "\\";
+				deleteFolderUTMBackChange(src2); // рекурсия
+			}
+		}
+		else // нашли файл
+		{
+			src2 = src + "\\" + std::string(FindFileData.cFileName);
+			if (DeleteFile(src2.c_str()) == 0) // удаляем файл
+			{
+				return 1;
+			}
+		}
+	} while (FindNextFile(hFind, &FindFileData)); // пока есть что удаляем
+
+	// удаляем пустую папку
+	if (RemoveDirectory(src.c_str()) == 0)
+	{
+		return 1;
+	}
+
+	FindClose(hFind); // очистка
+	return 0;
 }

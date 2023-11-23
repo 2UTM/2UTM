@@ -1,50 +1,46 @@
-#ifndef INSTALLUTM_H
-#define INSTALLUTM_H
+#pragma once
+#include "windows.h"
+#include "Resource.h"
+#include "Commctrl.h"
+#include "Logger.h"
+#include "config.h"
+#include "winscard.h"
+#include "TlHelp32.h"
+#include "GetPathExe.h"
+#include <fstream>
 
-#include "control.h"
+void installUTM(HWND dlg, int countUTM, std::string fileUTM, SCARDCONTEXT ctx, std::vector<std::string> vecTokens,
+	std::vector<std::string> vecAttr, HWND btnCancel, HWND hDlg); // общая функция, установка УТМ
+void changeStaticText(HWND dlg); // перебор многоточия в статике, подаем вид, что то делаем
+int startProcessInstallUTM(std::string fileUTM); // запуск и ожидание завершения процесса, установка УТМ
 
-#include <QObject>
-#include <QVector>
-#include <QSettings>
+// копируем папку УТМ
+int CopyFolder(std::string src, std::string dst);
+int copyFolderUTM(int numberUTM);
 
-#include <QDebug>
+// копирование батников в УТМ
+int copyBatFiles(int numberUTM);
 
-class InstallUTM : public QObject
-{
-    Q_OBJECT
-public:
-    explicit InstallUTM(QObject *parent = nullptr);
+// исправление конфигов УТМ (замена портов)
+int changePortConfigUTM(int numberUTM, std::string port);
 
-    // РџРѕР»СѓС‡РµРЅРёРµ РїР°СЂР°РјРµС‚СЂРѕРІ РґР»СЏ СѓСЃС‚Р°РЅРѕРІРєРё
-    void setParametrsInstall(QVector<QString> &vectorDeviceChoose,
-                             QVector<QString> &vectorPortChoose,
-                             QMap<QString, QString> &mapParametrsInstall,
-                             QString &fileUTM,
-                             SCARDCONTEXT &hContext,
-                             QString &fileAppPath,
-                             QVector<QString> &serialNumberDevice);
+// Исправляем батник в первом утм, чтобы служба не стартовала сама
+int changeInstallBatUTM();
 
-    // РЈСЃС‚Р°РЅРѕРІРєР°
-    void installUTM();
+// Завершаем процесс javaw.exe
+int killProcessJava();
 
-    // РџСЂРµСЂС‹РІР°РЅРёРµ СѓСЃС‚Р°РЅРѕРІРєРё
-    void set_status_thread(bool status_thread);
-signals:
-    // РЎРёРіРЅР°Р» РѕР± СЃС‚Р°С‚СѓСЃРµ СѓСЃС‚Р°РЅРѕРІРєРё РЈРўРњ, 0 - СѓСЃРїРµС…
-    void signalInstallUTMErrorCode(QString error, int errorCode);
+// Удаляем из автозагрузки
+int deleteFileUTMlnk();
 
-    // РЎРёРіРЅР°Р» РґР»СЏ РїСЂРѕРіСЂРµСЃСЃР±Р°СЂР°
-    void signalProgressBar(QString label, int progress);
+// Откат изменений при ошибке или отмене
+int backChange(std::vector<std::string> vecRutokens,
+	std::vector<std::string> vecAttrRutokens,
+	SCARDCONTEXT ctx,
+	HWND hDlg);
 
-private:
-    QVector<QString> installDeviceChoose; // РІС‹Р±СЂР°РЅРЅС‹Рµ СѓСЃС‚СЂРѕР№СЃС‚РІР°
-    QVector<QString> installPortChoose; // РІС‹Р±СЂР°РЅРЅС‹Рµ РїРѕСЂС‚С‹
-    QMap<QString, QString> mapinstallParametrsInstall;
-    QString installFileUTM;               // С„Р°Р№Р» РЈРўРњ
-    SCARDCONTEXT installHContext;         // РєРѕРЅС‚РµРєСЃС‚ СЃРјР°СЂС‚РєР°СЂС‚
-    bool m_status_thread; // РѕС‚РјРµРЅР° СѓСЃС‚Р°РЅРѕРІРєРё
-    QVector<QString> installSerialNumberDevice; // РІРµРєС‚РѕСЂ СЃРµСЂРёР№РЅС‹С… РЅРѕРјРµСЂРѕРІ СѓСЃС‚СЂРѕР№СЃС‚РІ РґР»СЏ Р·Р°РїРёСЃРё РІ РєРѕРЅС„РёРі
-    QString installFileAppPath;
-};
+// Остановка и удаление служб и папок
+int deleteUTMBackChange(HWND hDlg);
 
-#endif // INSTALLUTM_H
+// Удаление папок УТМ
+int deleteFolderUTMBackChange(std::string src);

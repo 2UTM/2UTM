@@ -1,0 +1,116 @@
+﻿//{{NO_DEPENDENCIES}}
+// Включаемый файл, созданный в Microsoft Visual C++.
+// Используется 2UTM_vs.rc
+//
+#define IDC_MYICON                      2
+#define ID_CANCEL                       2
+#define ID_CANCEL_INSTALL_UTM           2
+#define ID_CANCEL_READERS_NON_CONTEXT   2
+#define IDD_MY2UTMVS_DIALOG             102
+#define IDS_APP_TITLE                   103
+#define IDD_ABOUTBOX                    103
+#define IDM_ABOUT                       104
+#define IDM_EXIT                        105
+#define IDI_MY2UTMVS                    107
+#define IDI_SMALL                       108
+#define IDC_MY2UTMVS                    109
+#define IDD_INSTALL_UTM                 111
+#define IDD_READERS_NON_CONTEXT         112
+#define IDR_MAINFRAME                   128
+#define IDR_ACCELERATOR1                130
+#define IDC_EDIT_COUNT_UTM              1000
+#define IDC_COMBO2                      1002
+#define IDC_COMBO_UTM1                  1002
+#define IDC_COMBO3                      1003
+#define IDC_COMBO_UTM2                  1003
+#define IDC_COMBO4                      1004
+#define IDC_COMBO_UTM3                  1004
+#define IDC_COMBO5                      1005
+#define IDC_COMBO_UTM4                  1005
+#define IDC_COMBO6                      1006
+#define IDC_COMBO_UTM5                  1006
+#define IDC_COMBO7                      1007
+#define IDC_COMBO_UTM6                  1007
+#define IDC_COMBO8                      1008
+#define IDC_COMBO_UTM7                  1008
+#define IDC_COMBO9                      1009
+#define IDC_COMBO_UTM8                  1009
+#define IDC_COMBO10                     1010
+#define IDC_COMBO_UTM9                  1010
+#define IDC_COMBO11                     1011
+#define IDC_COMBO_UTM10                 1011
+#define IDC_EDIT3                       1013
+#define IDC_EDIT_PORT10                 1013
+#define IDC_EDIT4                       1014
+#define IDC_EDIT_PORT1                  1014
+#define IDC_EDIT5                       1015
+#define IDC_EDIT_PORT2                  1015
+#define IDC_EDIT6                       1016
+#define IDC_EDIT_PORT3                  1016
+#define IDC_EDIT7                       1017
+#define IDC_EDIT_PORT4                  1017
+#define IDC_EDIT8                       1018
+#define IDC_EDIT_PORT5                  1018
+#define IDC_EDIT9                       1019
+#define IDC_EDIT_PORT6                  1019
+#define IDC_EDIT10                      1020
+#define IDC_EDIT_PORT7                  1020
+#define IDC_EDIT11                      1021
+#define IDC_EDIT_PORT8                  1021
+#define IDC_EDIT12                      1022
+#define IDC_EDIT_PORT9                  1022
+#define IDC_EDIT13                      1023
+#define IDC_EDIT_PATH_UTM               1023
+#define IDC_BUTTON_BROWSE_PATH_UTM      1024
+#define IDOK_INSTALL_UTM                1025
+#define IDC_LIST1                       1026
+#define IDC_LIST_READERS_NON_CONTEXT    1026
+#define IDOK_DELETE_READER              1027
+#define IDC_STATIC_NAME_INSTALL         1029
+#define IDC_PROGRESS1                   1030
+#define IDC_STATIC_PROGRESSBAR          1031
+#define IDC_STATIC2                     1032
+#define IDC_STATIC3                     1033
+#define IDC_STATIC4                     1034
+#define IDC_STATIC5                     1035
+#define IDC_STATIC6                     1036
+#define IDC_STATIC7                     1037
+#define IDC_STATIC8                     1038
+#define IDC_STATIC9                     1039
+#define IDC_STATIC10                    1040
+#define IDC_STATIC11                    1041
+#define IDC_STATIC12                    1042
+#define IDC_STATIC_PROGRESSBAR2         1043
+#define IDC_STATIC_POINT                1044
+#define IDC_ABOUT_STATIC                1045
+#define IDC_BUTTON_GIT                  1047
+#define IDC_BUTTON1                     1048
+#define IDOK_DELETE_ALL_READER          1048
+#define ID_32771                        32771
+#define ID_REREAD_DEVICES               32772
+#define ID_32773                        32773
+#define ID_32774                        32774
+#define ID_SHOW_DEVICES_NO_CONTEXT      32775
+#define ID_32776                        32776
+#define ID_32777                        32777
+#define ID_INSTALL_UTM                  32778
+#define ID_32780                        32780
+#define ID_DELETE_UTM                   32781
+#define ID_32782                        32782
+#define ID_START_UTM                    32783
+#define ID_32784                        32784
+#define ID_STOP_UTM                     32785
+#define ID_32786                        32786
+#define IDC_STATIC                      -1
+
+// Next default values for new objects
+// 
+#ifdef APSTUDIO_INVOKED
+#ifndef APSTUDIO_READONLY_SYMBOLS
+#define _APS_NO_MFC                     1
+#define _APS_NEXT_RESOURCE_VALUE        131
+#define _APS_NEXT_COMMAND_VALUE         32787
+#define _APS_NEXT_CONTROL_VALUE         1049
+#define _APS_NEXT_SYMED_VALUE           110
+#endif
+#endif
