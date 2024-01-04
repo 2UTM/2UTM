@@ -66,13 +66,13 @@ std::string about =
 "Программа не контролирует работу УТМ, она создает условия, чтобы несколько УТМ смогли работать.\n"
 "Ограничение в 10 УТМ, потому что в ОС Windows, начиная с Windows 8, одновременно может быть только 10 ридеров для смарт карт.\n"
 "\n"
-"Что нового в версии 1.2:\n"
-"1. Убрана зависимость от Qt, полностью переписана на окна WinAPI.\n"
-"2. Исправлена ошибка с файлом конфига (не создавался по причинам, связанным с Qt).\n"
-"3. Добавлено создание дампа в случае аварийного завершения программы.\n"
-"4. Улучшены алгоритмы работы со смарт картами.\n"
-"5. Добавлена архивация лог файла, если достигнут размер 10 МБ.\n"
-"6. Добавлена отмена изменений при ошибках и отмены установки (токены возвращаются к изначальному виду, папки и службы удаляются).\n"
+"Что нового в версии 1.2.1:\n"
+"1. Исправлена ошибка выделения токена в листбоксе.\n"
+"2. Исправлена ошибка заполнения листбокса.\n"
+"3. Исправлена ошибка обращения к несуществующим токенам при установке УТМ, если токены отвалилсь, то окно установки обновляется с новыми данными.\n"
+"\n"
+"\n"
+"\n"
 "\n"
 "\n"
 "\n"
@@ -345,6 +345,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     std::thread thr(&workCollectDevice);
                     thr.detach();
                     SetWindowTextA(hEditInfoTokens, ""); // очищаем поле информации
+                    indexToken = -1; // сбрасываем выделение токена
                 }
                 break;
             }
@@ -666,7 +667,7 @@ INT_PTR CALLBACK WndNoContextProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM
     return (INT_PTR)FALSE;
 }
 
-// Обработчик сообщений для окна ридеры вне контекста
+// Обработчик сообщений для окна установки УТМ
 WNDPROC DefEditCountInstallUTMProc;
 INT_PTR CALLBACK WndInstallUTM(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -1244,6 +1245,8 @@ int workCollectDevice()
         error = "Не удалось получить контекст смарткарт, код ошибки " + std::to_string(err);
         setStatusBar(error);
         logger(error, "ERROR");
+        // Очищаем листбокс
+        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -1257,6 +1260,8 @@ int workCollectDevice()
         std::string error = "Не удалось получить серийные номера рутокенов, код ошибки " + std::to_string(err);
         setStatusBar(error);
         logger(error, "ERROR");
+        // Очищаем листбокс
+        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -1273,6 +1278,8 @@ int workCollectDevice()
         error = "Не найдено подключенных смарткарт";
         setStatusBar(error);
         logger(error, "ERROR");
+        // Очищаем листбокс
+        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -1283,6 +1290,8 @@ int workCollectDevice()
         error = "Не удалось получить список смарткарт, код ошибки " + std::to_string(err);
         setStatusBar(error);
         logger(error, "ERROR");
+        // Очищаем листбокс
+        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -1296,17 +1305,21 @@ int workCollectDevice()
         error = "Не удалось получить атрибуты смарткарт, код ошибки " + std::to_string(err);
         setStatusBar(error);
         logger(error, "ERROR");
+        // Очищаем листбокс
+        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
         return 5;
     }
 
-    if (fillListBoxRutokens(vecRutokens) == 0)
+    if (fillListBoxRutokens(vecRutokens) != 0)
     {
         error = "Не удалось заполнить листбокс";
         setStatusBar(error);
         logger(error, "ERROR");
+        // Очищаем листбокс
+        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
     }
 
     // Убираем прогрессбар и разблокируем главное окно
@@ -1315,6 +1328,8 @@ int workCollectDevice()
 
     setStatusBar("Выполнено");
     logger("Обновление устройств выполнено успешно", "INFO");
+
+    SendMessage(GetDlgItem(hDlgInstallUTM, IDC_EDIT_COUNT_UTM), WM_KEYUP, 0, 1); // для обновления данных, если открыто окно установки УТМ
 
     return 0;
 }
@@ -1372,11 +1387,12 @@ int workCollectDeviceNoContext()
         return 3;
     }
 
-    if (fillListBoxRutokensNoContext(vecRutokensNoContext) == 0)
+    if (fillListBoxRutokensNoContext(vecRutokensNoContext) != 0)
     {
         error = "Не удалось заполнить листбокс";
         setStatusBar(error);
         logger(error, "ERROR");
+        return 4;
     }
 
     logger("Обновление устройств вне контекста выполнено успешно", "INFO");
