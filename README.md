@@ -4,6 +4,8 @@
 
 Windows Defender может ругаться, что тут вирус троян, но это из за того, что exe файл не подписан
 
+### Коды ошибок взяты из WinAPI, список ошибок моджно посмотреть здесь - https://learn.microsoft.com/en-us/windows/win32/debug/system-error-codes--0-499-
+
 ### 2UTM - до 10ти УТМ на одной машине
 
 
