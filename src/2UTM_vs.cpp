@@ -1441,7 +1441,7 @@ int checkUTM()
     WIN32_FIND_DATA FindFileData;
     HANDLE hFind;
 
-    hFind = FindFirstFile("c:\\UTM*", &FindFileData);
+    hFind = FindFirstFile("c:\\UTM", &FindFileData);
     if (hFind == INVALID_HANDLE_VALUE)
     {
         return 1;
