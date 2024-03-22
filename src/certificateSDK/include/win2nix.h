@@ -1,6 +1,6 @@
 /*************************************************************************
 * Rutoken                                                                *
-* Copyright (c) 2003-2021, Aktiv-Soft JSC. All rights reserved.          *
+* Copyright (c) 2003-2023, Aktiv-Soft JSC. All rights reserved.          *
 * Подробная информация:  http://www.rutoken.ru                           *
 *------------------------------------------------------------------------*
 * Данный файл содержит переопределение функций Windows для               *
@@ -17,15 +17,19 @@
 #include <assert.h>
 
 #ifdef _WIN32
-#include <process.h>
+#include <windows.h>
+
+typedef HANDLE mutex_t;
 #else
 #include <pthread.h>
 
 #define uintptr_t pthread_t
+
+typedef pthread_mutex_t mutex_t;
 #endif
 
 typedef struct {
-	void (*func)(void*);
+	void (* func)(void*);
 	void* arg;
 } thread_args;
 
@@ -35,8 +39,7 @@ unsigned __stdcall
 #else
 void*
 #endif
-wrapperRunner(void* arg)
-{
+wrapperRunner(void* arg){
 	thread_args* th = (thread_args*)arg;
 	th->func(th->arg);
 	free(th);
@@ -51,6 +54,9 @@ wrapperRunner(void* arg)
 static int createThread(uintptr_t* thread, void (* funct)(void*), void* arg)
 {
 	thread_args* th = (thread_args*)malloc(sizeof(thread_args));
+	if (th == NULL) {
+		return 1;
+	}
 	th->arg = arg;
 	th->func = funct;
 #ifdef _WIN32
@@ -75,8 +81,63 @@ static int joinThread(uintptr_t thread)
 #else
 	int rv = pthread_join(thread, NULL);
 #endif
-	if (rv)
+	return !!rv;
+}
+
+static int createMutex(mutex_t* mutex)
+{
+#ifdef _WIN32
+	*mutex = CreateMutex(NULL, FALSE, NULL);
+	if (!*mutex) {
 		return 1;
+	}
+#else
+	if (pthread_mutex_init(mutex, NULL)) {
+		return 1;
+	}
+#endif
+	return 0;
+}
+
+static int destroyMutex(mutex_t* mutex)
+{
+#ifdef _WIN32
+	if (!CloseHandle(*mutex)) {
+		return 1;
+	}
+#else
+	if (pthread_mutex_destroy(mutex)) {
+		return 1;
+	}
+#endif
+	return 0;
+}
+
+static int lockMutex(mutex_t* mutex)
+{
+#ifdef _WIN32
+	if (WaitForSingleObject(*mutex, INFINITE) != WAIT_OBJECT_0) {
+		return 1;
+	}
+#else
+	if (pthread_mutex_lock(mutex)) {
+		return 1;
+	}
+#endif
+	return 0;
+}
+
+static int unlockMutex(mutex_t* mutex)
+{
+#ifdef _WIN32
+	if (!ReleaseMutex(*mutex)) {
+		return 1;
+	}
+#else
+	if (pthread_mutex_unlock(mutex)) {
+		return 1;
+	}
+#endif
 	return 0;
 }
 
