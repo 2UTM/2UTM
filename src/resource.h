@@ -18,6 +18,9 @@
 #define IDD_READERS_NON_CONTEXT         112
 #define IDR_MAINFRAME                   128
 #define IDR_ACCELERATOR1                130
+#define IDI_ICON4                       135
+#define IDI_ICON5                       136
+#define IDI_ICON6                       137
 #define IDC_EDIT_COUNT_UTM              1000
 #define IDC_COMBO2                      1002
 #define IDC_COMBO_UTM1                  1002
@@ -116,7 +119,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
-#define _APS_NEXT_RESOURCE_VALUE        131
+#define _APS_NEXT_RESOURCE_VALUE        138
 #define _APS_NEXT_COMMAND_VALUE         32795
 #define _APS_NEXT_CONTROL_VALUE         1049
 #define _APS_NEXT_SYMED_VALUE           110
