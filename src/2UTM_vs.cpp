@@ -401,14 +401,14 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     {
         // Создаем листбокс с токенами
         hListBoxTokensGlobal = CreateWindowEx(0, WC_LISTVIEW, "Tokens ListBox", WS_VISIBLE | WS_BORDER | WS_CHILD | LVS_REPORT |
-            LVS_NOCOLUMNHEADER | LVS_SINGLESEL | LVS_SORTASCENDING, 1, 26, 381, 240, hWndMain, (HMENU)MainWidgetId::LISTVIEW_TOKENS, NULL, NULL);
+            LVS_NOCOLUMNHEADER | LVS_SINGLESEL | LVS_SORTASCENDING, 1, 26, 381, 215, hWndMain, (HMENU)MainWidgetId::LISTVIEW_TOKENS, NULL, NULL);
 
         // Создаем листбокс с утм и службами
         hListBoxUTMServiceGlobal = CreateWindowEx(0, WC_LISTVIEW, "Tokens UTM Service", WS_VISIBLE | WS_BORDER | WS_CHILD | LVS_REPORT |
-            LVS_NOCOLUMNHEADER | LVS_SINGLESEL | LVS_SORTASCENDING, 1, 26, 381, 460, hWndMain, (HMENU)MainWidgetId::LISTVIEW_UTM_SERVICE, NULL, NULL);
+            LVS_NOCOLUMNHEADER | LVS_SINGLESEL | LVS_SORTASCENDING, 1, 26, 381, 472, hWndMain, (HMENU)MainWidgetId::LISTVIEW_UTM_SERVICE, NULL, NULL);
 
         // Поле для информации о токене
-        hEditInfoTokens = CreateWindowEx(0, "Edit", 0, WS_CHILD | WS_VISIBLE | WS_BORDER | ES_READONLY | ES_MULTILINE | WS_VSCROLL, 1, 245, 381, 250, hWndMain, NULL, NULL, NULL);
+        hEditInfoTokens = CreateWindowEx(0, "Edit", 0, WS_CHILD | WS_VISIBLE | WS_BORDER | ES_READONLY | ES_MULTILINE | WS_VSCROLL, 1, 245, 381, 252, hWndMain, NULL, NULL, NULL);
 
         // Статусбар
         hStatusBar = CreateWindowEx(0, "Static", " ", WS_CHILD | WS_VISIBLE | SS_LEFT, 1, 498, 381, 20, hWndMain, NULL, NULL, NULL);
@@ -3148,7 +3148,7 @@ int checkServiceUTM()
     std::string countUTM;
     if (readConfigCountUTM(countUTM) == 1)
     {
-        logger("Ошибка получения кол ва УТМ при проверке наличия служб УТМ - " + std::to_string(GetLastError()), "ERROR");
+        logger("Ошибка чтения конфига при проверке наличия служб УТМ - " + std::to_string(GetLastError()), "ERROR");
         return 1;
     }
     std::vector<std::string> vecUTMService;
