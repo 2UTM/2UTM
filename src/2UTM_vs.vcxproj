@@ -176,6 +176,9 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="2UTM.ico" />
+    <Image Include="runService.ico" />
+    <Image Include="stopService.ico" />
+    <Image Include="token.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

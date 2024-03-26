@@ -6,6 +6,11 @@
 #include "ControlService.h"
 
 #define MAX_LOADSTRING 100
+<<<<<<< Updated upstream
+=======
+#define TRAY_ICON WM_USER + 1
+#define TIMER_CHECK_SERVICE WM_USER + 2
+>>>>>>> Stashed changes
 
 ///////////////////////////////////////////////////////////////////////////////////////
 // Создание дампа в случае аварийного завершения
@@ -66,10 +71,17 @@ std::string about =
 "Программа не контролирует работу УТМ, она создает условия, чтобы несколько УТМ смогли работать.\n"
 "Ограничение в 10 УТМ, потому что в ОС Windows, начиная с Windows 8, одновременно может быть только 10 ридеров для смарт карт.\n"
 "\n"
+<<<<<<< Updated upstream
 "Что нового в версии 1.2.2:\n"
 "1. Исправлена ошибка проверки уже установленных УТМ, теперь переименованые папки не принимаются за установленные УТМ.\n"
 "\n"
 "\n"
+=======
+"Что нового в версии 1.4:\n"
+"1. Добавлена вкладка службы УТМ со статусами служб УТМ, обновление статусов раз в минуту.\n"
+"2. Переделан ListBox на ListView.\n"
+"3. Добавлены иконки для красоты.\n"
+>>>>>>> Stashed changes
 "\n"
 "\n"
 "\n"
@@ -90,9 +102,25 @@ DWORD dwMinorVersionOS;                         // версия ос
 int countUTM = 0;                               // кол во УТМ
 int indexToken = -1;                             // индекс выделенного токена, чтобы не выделять одно и тоже
 HANDLE handleThrInstallUTM;
+<<<<<<< Updated upstream
+=======
+NOTIFYICONDATA pnid; // структура для трея
+bool flagShowMessageTray = false; // для сообщения в трее
+bool flagServiceRun = false; // флаг - запущен ли из под службы или нет
+bool flagAutostartUTM = false; // флаг - идет автозапуск утм или нет
+std::map<DWORD, DWORD> mapSessionIDProcessID; // для контроля входа выхода пользователей и для завершения процессов
+UINT WM_TASKBARCREATED; // для пользовательского сообщения о создании панели задач от explorer.exe
+UINT_PTR checkServiceTimer = 0; // таймер для сбора инфы о службах
+std::vector<std::string> vecPathService; // для путей до исполняющих файлов служб
+
+// Иконки для листвью
+HICON hIconToken = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON3));
+HICON hIconServiceRun = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON1));
+HICON hIconServiceStop = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON2));
+>>>>>>> Stashed changes
 
 // Хендлы виджетов
-HWND hWndMain, hListBoxTokensGlobal, hEditInfoTokens, hStatusBar, hProgressBar, hDlgReadersNoContext, hDlgInstallUTM;
+HWND hWndMain, hListBoxTokensGlobal, hEditInfoTokens, hStatusBar, hProgressBar, hDlgReadersNoContext, hDlgInstallUTM, hTabControl, hListBoxUTMServiceGlobal;
 
 // создание векторов с ид виджетов в окне установить утм
 std::vector<int> vecStaticUTM = { IDC_STATIC3, IDC_STATIC4, IDC_STATIC5, IDC_STATIC6, IDC_STATIC7, IDC_STATIC8,
@@ -212,17 +240,17 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     getVersionOS(dwMinorVersionOS);
 
     hWndMain = CreateWindowEx(0, szWindowClass, szTitle, WS_SYSMENU, x, y, 390, 560, nullptr, nullptr, hInstance, nullptr);
-    HWND hSeparator;
 
     // Если минор равен 1, это вин 7
     if (dwMinorVersionOS == 1)
     {
         // Создаем листбокс с токенами
-        hListBoxTokensGlobal = CreateWindowEx(0, "LISTBOX", "Tokens ListBox", WS_CHILD | LBS_STANDARD | WS_VISIBLE,
-            1, 1, 381, 240, hWndMain, (HMENU)MainWidgetId::LISTBOX_TOKENS, NULL, NULL);
+        hListBoxTokensGlobal = CreateWindowEx(0, WC_LISTVIEW, "Tokens ListBox", WS_VISIBLE | WS_BORDER | WS_CHILD | LVS_REPORT |
+            LVS_NOCOLUMNHEADER | LVS_SINGLESEL | LVS_SORTASCENDING, 1, 26, 381, 240, hWndMain, (HMENU)MainWidgetId::LISTVIEW_TOKENS, NULL, NULL);
 
-        // Сепаратор
-        hSeparator = CreateWindowEx(0, "Static", "", WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ, 1, 235, 381, 0, hWndMain, NULL, NULL, NULL);
+        // Создаем листбокс с утм и службами
+        hListBoxUTMServiceGlobal = CreateWindowEx(0, WC_LISTVIEW, "Tokens UTM Service", WS_VISIBLE | WS_BORDER | WS_CHILD | LVS_REPORT |
+            LVS_NOCOLUMNHEADER | LVS_SINGLESEL | LVS_SORTASCENDING, 1, 26, 381, 460, hWndMain, (HMENU)MainWidgetId::LISTVIEW_UTM_SERVICE, NULL, NULL);
 
         // Поле для информации о токене
         hEditInfoTokens = CreateWindowEx(0, "Edit", 0, WS_CHILD | WS_VISIBLE | WS_BORDER | ES_READONLY | ES_MULTILINE | WS_VSCROLL, 1, 245, 381, 250, hWndMain, NULL, NULL, NULL);
@@ -236,11 +264,12 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     else // иначе вин 10
     {
         // Создаем листбокс с токенами
-        hListBoxTokensGlobal = CreateWindowEx(0, "LISTBOX", "Tokens ListBox", WS_CHILD | LBS_STANDARD | WS_VISIBLE,
-            1, 1, 371, 240, hWndMain, (HMENU)MainWidgetId::LISTBOX_TOKENS, NULL, NULL);
+        hListBoxTokensGlobal = CreateWindowEx(0, WC_LISTVIEW, "Tokens ListBox", WS_VISIBLE | WS_BORDER | WS_CHILD | LVS_REPORT |
+            LVS_NOCOLUMNHEADER | LVS_SINGLESEL | LVS_SORTASCENDING, 1, 26, 371, 210, hWndMain, (HMENU)MainWidgetId::LISTVIEW_TOKENS, NULL, NULL);
 
-        // Сепаратор
-        hSeparator = CreateWindowEx(0, "Static", "", WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ, 1, 235, 371, 0, hWndMain, NULL, NULL, NULL);
+        // Создаем листбокс с утм и службами
+        hListBoxUTMServiceGlobal = CreateWindowEx(0, WC_LISTVIEW, "Tokens UTM Service", WS_VISIBLE | WS_BORDER | WS_CHILD | LVS_REPORT |
+            LVS_NOCOLUMNHEADER | LVS_SINGLESEL | LVS_SORTASCENDING, 1, 26, 371, 457, hWndMain, (HMENU)MainWidgetId::LISTVIEW_UTM_SERVICE, NULL, NULL);
 
         // Поле для информации о токене
         hEditInfoTokens = CreateWindowEx(0, "Edit", 0, WS_CHILD | WS_VISIBLE | WS_BORDER | ES_READONLY | ES_MULTILINE | WS_VSCROLL, 1, 245, 371, 238, hWndMain, NULL, NULL, NULL);
@@ -252,13 +281,30 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
         hProgressBar = CreateWindowEx(0, PROGRESS_CLASS, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | PBS_MARQUEE, 6, 215, 360, 30, hWndMain, NULL, NULL, NULL);
     }
 
-    if (!hWndMain || !hListBoxTokensGlobal || !hEditInfoTokens || !hSeparator || !hStatusBar || !hProgressBar)
+    // Иконки для листвью
+    HIMAGELIST hSmall = ImageList_Create(16, 16, ILC_COLOR32, 3, 0);
+    ImageList_AddIcon(hSmall, hIconToken);
+    ImageList_AddIcon(hSmall, hIconServiceRun);
+    ImageList_AddIcon(hSmall, hIconServiceStop);
+    ListView_SetImageList(hListBoxTokensGlobal, hSmall, LVSIL_SMALL);
+    ListView_SetImageList(hListBoxUTMServiceGlobal, hSmall, LVSIL_SMALL);
+
+    CreateColumn(hListBoxTokensGlobal, 1, 0, 370);
+    CreateColumn(hListBoxUTMServiceGlobal, 1, 0, 370);
+    ListView_SetExtendedListViewStyle(hListBoxTokensGlobal, LVS_EX_FULLROWSELECT);
+    ListView_SetExtendedListViewStyle(hListBoxUTMServiceGlobal, LVS_EX_FULLROWSELECT | LVS_EX_INFOTIP);
+
+    checkServiceUTM(); // получаем инфу о утм и службах, заполняем листбокс
+    checkServiceTimer = SetTimer(hWndMain, TIMER_CHECK_SERVICE, 60000, NULL);
+
+    if (!hWndMain || !hListBoxTokensGlobal || !hEditInfoTokens || !hStatusBar || !hProgressBar || !hListBoxUTMServiceGlobal || !checkServiceTimer)
     {
         logger("Не удалось создать окно!", "ERROR");
         return FALSE;
     }
 
     ShowWindow(hProgressBar, SW_HIDE);
+    ShowWindow(hListBoxUTMServiceGlobal, SW_HIDE);
 
     // Установка шрифта
     HFONT font = CreateFont(
@@ -279,6 +325,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     SendMessage(hWndMain, WM_SETFONT, (WPARAM)font, TRUE);
     SendMessage(hListBoxTokensGlobal, WM_SETFONT, (WPARAM)font, TRUE);
+    SendMessage(hListBoxUTMServiceGlobal, WM_SETFONT, (WPARAM)font, TRUE);
     SendMessage(hEditInfoTokens, WM_SETFONT, (WPARAM)font, TRUE);
     SendMessage(hStatusBar, WM_SETFONT, (WPARAM)font, TRUE);
 
@@ -308,8 +355,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     switch (message)
     {
+        case WM_TIMER:
+        {
+            if (wParam == TIMER_CHECK_SERVICE)
+            {
+                std::thread thr(&checkServiceUTM);
+                thr.detach();
+            }
+
+            break;
+        }
+
         case WM_CREATE:
         {
+<<<<<<< Updated upstream
+=======
+            // Регистрация пользовательского сообщения о создании панели задач от explorer.exe
+            WM_TASKBARCREATED = RegisterWindowMessage("TaskbarCreated");
+
+            OnCreate(hWnd, (CREATESTRUCT*)lParam); // создаем вкладки
+
+            // Сбор данных
+            workCollectDevice();
+
+>>>>>>> Stashed changes
             DEV_BROADCAST_DEVICEINTERFACE Flt = { 0 };
             ZeroMemory(&Flt, sizeof(Flt));
             Flt.dbcc_size = sizeof(DEV_BROADCAST_DEVICEINTERFACE);
@@ -351,6 +420,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
         }
         break;
+
         case WM_CTLCOLORSTATIC: // чтобы не активные поля не закрашивалось серым
         {
             if ((HWND)lParam == hEditInfoTokens)
@@ -369,6 +439,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // События листбокса
             switch ((MainWidgetId)LOWORD(wParam))
             {
+<<<<<<< Updated upstream
                 case MainWidgetId::LISTBOX_TOKENS:
                 {
                     if (HIWORD(wParam) == LBN_SELCHANGE) // если выбрали токен
@@ -398,6 +469,85 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     }
                 }
                 break;
+=======
+                case MainWidgetId::TRAY_SHOW2UTM:
+                {
+                    ShowWindow(hWnd, SW_NORMAL);
+
+                    break;
+                }
+
+                case MainWidgetId::TRAY_INSTALL_SERVICE:
+                {
+                    if (flagAutostartUTM)
+                    {
+                        MessageBox(hWnd, "Идет запуск УТМ, пожалуйста подождите...", "Внимание", MB_ICONINFORMATION);
+                        break;
+                    }
+
+                    if (InstallService2UTM() == -2)
+                    {
+                        MessageBox(hWnd, "Служба уже установлена", "Внимание", MB_ICONINFORMATION);
+                        break;
+                    }
+
+                    MessageBox(hWnd, "Будет установлена служба 2UTM_service и перезапущена программа", "Внимание", MB_ICONINFORMATION);
+
+                    SCardReleaseContext(ctxCard);
+                    Shell_NotifyIcon(NIM_DELETE, &pnid); // отправка сообщения - убрать иконку из трея
+
+                    startService2UTM();
+
+                    PostQuitMessage(0);
+
+                    break;
+                }
+
+                case MainWidgetId::TRAY_DELETE_SERVICE:
+                {
+                    if (flagAutostartUTM)
+                    {
+                        MessageBox(hWnd, "Идет запуск УТМ, пожалуйста подождите...", "Внимание", MB_ICONINFORMATION);
+                        break;
+                    }
+
+                    if (RemoveService2UTM() == -2)
+                    {
+                        MessageBox(hWnd, "Служба уже удалена", "Внимание", MB_ICONINFORMATION);
+                        break;
+                    }
+
+                    MessageBox(hWnd, "Будет удалена служба 2UTM_service и завершена программа", "Внимание", MB_ICONINFORMATION);
+
+                    SCardReleaseContext(ctxCard);
+                    Shell_NotifyIcon(NIM_DELETE, &pnid); // отправка сообщения - убрать иконку из трея
+                    PostQuitMessage(0);
+
+                    break;
+                }
+
+                case MainWidgetId::TRAY_EXIT:
+                {
+                    if (flagAutostartUTM)
+                    {
+                        MessageBox(hWnd, "Идет запуск УТМ, пожалуйста подождите...", "Внимание", MB_ICONINFORMATION);
+                        break;
+                    }
+
+                    SCardReleaseContext(ctxCard);
+                    Shell_NotifyIcon(NIM_DELETE, &pnid); // отправка сообщения - убрать иконку из трея
+                    if (flagServiceRun)
+                    {
+                        stopService2UTM();
+                    }
+                    else
+                    {
+                        PostQuitMessage(0);
+                    }
+
+                    break;
+                }
+>>>>>>> Stashed changes
             }
 
             int wmId = LOWORD(wParam);
@@ -575,6 +725,83 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             PostQuitMessage(0);
             break;
         }
+
+        // регулируем расположение вкладок
+        case WM_SIZE:
+        {
+            OnSize(hWnd, LOWORD(lParam), HIWORD(lParam), (UINT)wParam);
+            break;
+        }
+
+        // Обрабатываем переключение вкладки
+        // break в конце не нужен
+        case WM_NOTIFY:
+        {
+            if (((LPNMHDR)lParam)->hwndFrom == hListBoxTokensGlobal)
+            {
+                switch (((LPNMHDR)lParam)->code)
+                {
+                    case NM_CLICK:
+                    {
+                        if (flagAutostartUTM)
+                        {
+                            MessageBox(hWnd, "Идет запуск УТМ, пожалуйста подождите...", "Внимание", MB_ICONINFORMATION);
+                            break;
+                        }
+
+                        NM_LISTVIEW* lst = (NM_LISTVIEW*)lParam;
+
+                        // Если кликнули просто так, то ниче не делаем
+                        std::vector<CHAR> vec(MAX_PATH);
+                        ListView_GetItemText(hListBoxTokensGlobal, lst->iItem, lst->iSubItem, &vec.front(), MAX_PATH);
+                        std::string buff(&vec.front());
+                        if (buff.empty())
+                        {
+                            break;
+                        }
+
+                        // Открываем прогрессбар и блокируем главное окно
+                        ShowWindow(hProgressBar, SW_SHOW);
+                        SendMessage(hProgressBar, (UINT)PBM_SETMARQUEE, (WPARAM)1, NULL);
+                        EnableWindow(hWnd, FALSE);
+
+                        // читаем выбранный токен
+                        std::thread thr(&wraperReadDevice, lst->iItem);
+                        thr.detach();
+
+                        break;
+                    }
+                }
+            }
+
+            switch (((LPNMHDR)lParam)->code)
+            {
+                // подсказка в листвью с путем
+                case LVN_GETINFOTIP:
+                {
+                    LPNMLVGETINFOTIP GetInfoTip = (LPNMLVGETINFOTIP)lParam;
+                    strcpy(GetInfoTip->pszText, vecPathService[GetInfoTip->iItem].c_str());
+
+                    break;
+                }
+
+                // break в конце не нужен
+                case TCN_SELCHANGE:
+                {
+                    int tab = TabCtrl_GetCurSel(((LPNMHDR)lParam)->hwndFrom); // получаем номер активной вкладки
+                    // В зависимости от вкладки показываем нужные контролы
+                    if (tab == 0) // рутокены
+                    {
+                        showOrHideOption(0);
+                    }
+                    if (tab == 1) // службы утм
+                    {
+                        showOrHideOption(1);
+                    }
+                }
+            }
+        }
+
         default:
         {
             return DefWindowProc(hWnd, message, wParam, lParam);
@@ -1208,21 +1435,15 @@ int fillListBoxRutokens(std::vector<std::string> vecReader)
         return 1;
     }
 
-    // получаем индекс первого элемента
-    int topIndex = SendMessage(hListBoxTokensGlobal, LB_GETTOPINDEX, 0, 0);
-
-    // Удаляем все строки в листбоксе контактов
-    SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
+    // Удаляем все строки в листвью контактов
+    ListView_DeleteAllItems(hListBoxTokensGlobal);
 
     // Заполняем
-    for (std::string elem : vecReader)
+    for (int i = 0; i < vecReader.size(); ++i)
     {
-        std::string s = "      " + elem; // пробелы для красоты
-        SendMessage(hListBoxTokensGlobal, LB_ADDSTRING, 0, (LPARAM)s.c_str());
+        std::string s = "      " + vecReader[i]; // пробелы для красоты
+        CreateItem(hListBoxTokensGlobal, (CHAR*)s.c_str(), i, 0);
     }
-
-    // устанавливаем индекс первого элемента
-    SendMessage(hListBoxTokensGlobal, LB_SETTOPINDEX, topIndex, 0);
 
     return 0;
 }
@@ -1245,8 +1466,8 @@ int workCollectDevice()
         error = "Не удалось получить контекст смарткарт, код ошибки " + std::to_string(err);
         setStatusBar(error);
         logger(error, "ERROR");
-        // Очищаем листбокс
-        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
+        // Удаляем все строки в листвью контактов
+        ListView_DeleteAllItems(hListBoxTokensGlobal);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -1260,8 +1481,8 @@ int workCollectDevice()
         std::string error = "Не удалось получить серийные номера рутокенов, код ошибки " + std::to_string(err);
         setStatusBar(error);
         logger(error, "ERROR");
-        // Очищаем листбокс
-        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
+        // Удаляем все строки в листвью контактов
+        ListView_DeleteAllItems(hListBoxTokensGlobal);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -1272,14 +1493,11 @@ int workCollectDevice()
     err = getListDevice(vecRutokens, ctxCard);
     if (err == 1)
     {
-        // Удаляем все строки в листбоксе контактов
-        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
-
         error = "Не найдено подключенных смарткарт";
         setStatusBar(error);
         logger(error, "ERROR");
-        // Очищаем листбокс
-        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
+        // Удаляем все строки в листвью контактов
+        ListView_DeleteAllItems(hListBoxTokensGlobal);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -1290,8 +1508,8 @@ int workCollectDevice()
         error = "Не удалось получить список смарткарт, код ошибки " + std::to_string(err);
         setStatusBar(error);
         logger(error, "ERROR");
-        // Очищаем листбокс
-        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
+        // Удаляем все строки в листвью контактов
+        ListView_DeleteAllItems(hListBoxTokensGlobal);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -1305,8 +1523,8 @@ int workCollectDevice()
         error = "Не удалось получить атрибуты смарткарт, код ошибки " + std::to_string(err);
         setStatusBar(error);
         logger(error, "ERROR");
-        // Очищаем листбокс
-        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
+        // Удаляем все строки в листвью контактов
+        ListView_DeleteAllItems(hListBoxTokensGlobal);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -1318,8 +1536,8 @@ int workCollectDevice()
         error = "Не удалось заполнить листбокс";
         setStatusBar(error);
         logger(error, "ERROR");
-        // Очищаем листбокс
-        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
+        // Удаляем все строки в листвью контактов
+        ListView_DeleteAllItems(hListBoxTokensGlobal);
     }
 
     // Убираем прогрессбар и разблокируем главное окно
@@ -1694,7 +1912,7 @@ int startUTM()
         // Проверка работы УТМ (запрос на главную страницу)
         setStatusBar("Проверка работы УТМ 1 (запрос на главную страницу)");
         logger("Проверка работы УТМ 1 (запрос на главную страницу)", "INFO");
-        err = checkHomePageUTM(ports[0], flagStartUTM);
+        err = checkHomePageUTM(ports[0], flagStartUTM, DEFAULT_TIMEOUT);
         if (err != 0)
         {
             error = "Не удалось проверить работу УТМ! Код ошибки - " + std::to_string(err) + "\nФункция завершилась по таймауту" + "\nБудет выполнена отмена изменений";
@@ -1848,7 +2066,7 @@ int startUTM()
             // проверка работы утм
             setStatusBar("Проверка работы УТМ " + numberService + " (запрос на главную страницу)");
             logger("Проверка работы УТМ " + numberService + " (запрос на главную страницу)", "INFO");
-            err = checkHomePageUTM(ports[i], flagStartUTM);
+            err = checkHomePageUTM(ports[i], flagStartUTM, DEFAULT_TIMEOUT);
             if (err != 0)
             {
                 error = "Не удалось проверить работу УТМ " + numberService + "! Код ошибки - " + std::to_string(err) + "\nФункция завершилась по таймауту" + "\nБудет выполнена отмена изменений";
@@ -1988,4 +2206,724 @@ int stopUTM()
     logger("Остановка УТМ успешно завершено", "INFO");
 
     return 0;
+<<<<<<< Updated upstream
+=======
+}
+
+// создания иконки в трее
+int createTrayWindow(HWND hwnd)
+{
+    memset(&pnid, 0, sizeof(NOTIFYICONDATA)); // выделяем память на структуру
+    pnid.hWnd = hwnd; // указываем хендл окна, куда будут приходить сообщения от трея
+    pnid.hIcon = (HICON)LoadImage(GetModuleHandleW(NULL), MAKEINTRESOURCE(IDI_MY2UTMVS), //
+        IMAGE_ICON, 0, 0, LR_DEFAULTCOLOR | LR_DEFAULTSIZE);                     // указываем иконку
+    pnid.uID = 1; // идетификатор трея
+    pnid.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
+    pnid.uCallbackMessage = TRAY_ICON; // сообщение, которое будет прилетать в обработчик событий окна hwnd
+    memcpy(pnid.szTip, "2UTM", 5); // имя
+
+    Shell_NotifyIcon(NIM_ADD, &pnid); // отправка сообщения - добавить иконку в трей
+
+    return 0;
+}
+
+// показать сообщение в трее
+void showMessageInTray()
+{
+    CoInitialize(NULL);
+    IUserNotification* un = NULL;
+    if (CoCreateInstance(CLSID_UserNotification, 0, CLSCTX_ALL, IID_IUserNotification, (void**)&un) == S_OK)
+    {
+        un->SetBalloonInfo(L"Внимание!", L"2UTM все еще работает!", NIIF_INFO);
+        un->SetIconInfo(pnid.hIcon, L""); // иконка
+        un->SetBalloonRetry(0, 0, 0); // иначе бесконечно появляеться
+        un->Show(NULL, 0);
+        un->Release();
+    }
+    CoUninitialize();
+}
+
+int InstallService2UTM()
+{
+    SC_HANDLE hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_CREATE_SERVICE);
+    if (!hSCManager)
+    {
+        logger("Ошибка открытия Service Control Manager - " + std::to_string(GetLastError()), "ERROR");
+        return -1;
+    }
+
+    // Открываем службу
+    HANDLE schService = OpenService(hSCManager, "2UTM_service", SERVICE_ALL_ACCESS);
+    if (schService)
+    {
+        logger("Служба уже установлена", "INFO");
+        return -2;
+    }
+
+    //Формируем путь до exe с ключем -service для установки и запуска службы
+    CHAR PathService[MAX_PATH];
+    GetModuleFileName(NULL, PathService, MAX_PATH);
+    std::string strPath(PathService);
+    strPath.append(" -service");
+
+    SC_HANDLE hService = CreateService(
+        hSCManager,
+        "2UTM_service",
+        "2UTM_service",
+        SERVICE_ALL_ACCESS,
+        SERVICE_WIN32_OWN_PROCESS,
+        SERVICE_AUTO_START,
+        SERVICE_ERROR_NORMAL,
+        strPath.c_str(),
+        NULL, NULL, NULL, NULL, NULL
+    );
+
+    if (!hService) {
+        int err = GetLastError();
+        switch (err) {
+        case ERROR_ACCESS_DENIED:
+            logger("Ошибка установки службы ERROR_ACCESS_DENIED", "ERROR");
+            break;
+        case ERROR_CIRCULAR_DEPENDENCY:
+            logger("Ошибка установки службы ERROR_CIRCULAR_DEPENDENCY", "ERROR");
+            break;
+        case ERROR_DUPLICATE_SERVICE_NAME:
+            logger("Ошибка установки службы ERROR_DUPLICATE_SERVICE_NAME", "ERROR");
+            break;
+        case ERROR_INVALID_HANDLE:
+            logger("Ошибка установки службы ERROR_INVALID_HANDLE", "ERROR");
+            break;
+        case ERROR_INVALID_NAME:
+            logger("Ошибка установки службы ERROR_INVALID_NAME", "ERROR");
+            break;
+        case ERROR_INVALID_PARAMETER:
+            logger("Ошибка установки службы ERROR_INVALID_PARAMETER", "ERROR");
+            break;
+        case ERROR_INVALID_SERVICE_ACCOUNT:
+            logger("Ошибка установки службы ERROR_INVALID_SERVICE_ACCOUNT", "ERROR");
+            break;
+        case ERROR_SERVICE_EXISTS:
+            logger("Ошибка установки службы ERROR_SERVICE_EXISTS", "ERROR");
+            break;
+        default:
+            logger("Ошибка установки службы Undefined", "ERROR");
+        }
+        CloseServiceHandle(hSCManager);
+        return -1;
+    }
+    CloseServiceHandle(hService);
+
+    CloseServiceHandle(hSCManager);
+    logger("Установка службы успешно завершена", "INFO");
+    return 0;
+}
+
+int RemoveService2UTM()
+{
+    SC_HANDLE hSCManager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+    if (!hSCManager)
+    {
+        logger("Ошибка открытия Service Control Manager - " + std::to_string(GetLastError()), "ERROR");
+        return -1;
+    }
+    SC_HANDLE hService = OpenService(hSCManager, "2UTM_service", SERVICE_STOP | DELETE);
+    if (!hService)
+    {
+        logger("Ошибка открытия службы - " + std::to_string(GetLastError()), "ERROR");
+        CloseServiceHandle(hSCManager);
+        return -2;
+    }
+
+    DeleteService(hService);
+    CloseServiceHandle(hService);
+    CloseServiceHandle(hSCManager);
+    logger("Удаление службы прошло успешно", "INFO"); // ТЕСТ ЛОГА ЧЕРЕЗ fprintf
+    return 0;
+}
+
+// Запуск процеса из службы с токеном службы в окружении пользователя
+int startProcessTokenServiceEnvUser(DWORD sessionID)
+{
+    DWORD SessionId = 0;
+    HANDLE phTokenService = NULL;
+    HANDLE phDuplicateToken = NULL;
+    HANDLE phTokenUser = NULL;
+    VOID* pEnvBlock = NULL;
+    SessionId = WTSGetActiveConsoleSessionId();  // Получаем ИД сессии пользователя
+    if (WTSQueryUserToken(SessionId, &phTokenUser) == 0)  // Получаем токен пользователя
+    {
+        logger("Ошибка WTSQueryUserToken - " + std::to_string(GetLastError()), "ERROR");
+        DestroyEnvironmentBlock(pEnvBlock);
+        CloseHandle(phTokenService);
+        CloseHandle(phDuplicateToken);
+        CloseHandle(phTokenUser);
+        return 1;
+    }
+
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ADJUST_SESSIONID, &phTokenService) == 0)  // Открываем токен нашей службы
+    {
+        logger("Ошибка OpenProcessToken - " + std::to_string(GetLastError()), "ERROR");
+        DestroyEnvironmentBlock(pEnvBlock);
+        CloseHandle(phTokenService);
+        CloseHandle(phDuplicateToken);
+        CloseHandle(phTokenUser);
+        return 1;
+    }
+
+    if (DuplicateTokenEx(phTokenService, MAXIMUM_ALLOWED, 0, SECURITY_IMPERSONATION_LEVEL::SecurityImpersonation, TOKEN_TYPE::TokenPrimary, &phDuplicateToken) == 0)  // Дублируем токен
+    {
+        logger("Ошибка DuplicateTokenEx - " + std::to_string(GetLastError()), "ERROR");
+        DestroyEnvironmentBlock(pEnvBlock);
+        CloseHandle(phTokenService);
+        CloseHandle(phDuplicateToken);
+        CloseHandle(phTokenUser);
+        return 1;
+    }
+
+    if (SetTokenInformation(phDuplicateToken, TOKEN_INFORMATION_CLASS::TokenSessionId, &SessionId, sizeof(SessionId)) == 0)  // Устанавливаем дубликат в сессию пользователя
+    {
+        logger("Ошибка SetTokenInformation - " + std::to_string(GetLastError()), "ERROR");
+        DestroyEnvironmentBlock(pEnvBlock);
+        CloseHandle(phTokenService);
+        CloseHandle(phDuplicateToken);
+        CloseHandle(phTokenUser);
+        return 1;
+    }
+
+    if (CreateEnvironmentBlock(&pEnvBlock, phTokenUser, FALSE) == FALSE)  // Получаем окружение пользователя из токена
+    {
+        logger("Ошибка CreateEnvironmentBlock - " + std::to_string(GetLastError()), "ERROR");
+        DestroyEnvironmentBlock(pEnvBlock);
+        CloseHandle(phTokenService);
+        CloseHandle(phDuplicateToken);
+        CloseHandle(phTokenUser);
+        return 1;
+    }
+
+    STARTUPINFO StartInfo;  // Структура определяет оконную станцию, рабочий стол, стандартные дескрипторы и внешний вид главного окна для процесса во время создания.
+    GetStartupInfo(&StartInfo);  // Извлекает содержимое структуры
+    StartInfo.lpDesktop = (LPSTR)"WinSta0\\Default";  // Устанавливаем оконную станцию и рабочий стол
+    PROCESS_INFORMATION ProcInfo;  // Структура содержит информацию о вновь созданном процессе и его основном потоке
+
+    bool result;
+    CHAR PathExe[MAX_PATH];
+    GetModuleFileName(NULL, PathExe, MAX_PATH);
+    std::string strExe(PathExe);
+    strExe.append(" -service_run");
+    // Создаем процесс
+    result = CreateProcessAsUser(
+        phDuplicateToken, // Токен
+        NULL, // Имя приложения.
+        (LPSTR)strExe.c_str(), // Путь до исполняемого файла
+        NULL, // Атрибуты безопасности процесса.
+        NULL, // Атрибуты безопасности потоков.
+        FALSE, // Наследовать дескрипторы или нет.
+        CREATE_NEW_CONSOLE | CREATE_UNICODE_ENVIRONMENT, // Флаги создания
+        pEnvBlock, // Окружение
+        NULL, // Текущий каталог.
+        &StartInfo,
+        &ProcInfo
+    );
+    
+    if (!result)
+    {
+        logger("Не удалось запустить экземпляр 2UTM - " + std::to_string(GetLastError()), "ERROR");
+        CloseHandle(ProcInfo.hProcess);
+        CloseHandle(ProcInfo.hThread);
+        DestroyEnvironmentBlock(pEnvBlock);
+        CloseHandle(phTokenService);
+        CloseHandle(phDuplicateToken);
+        CloseHandle(phTokenUser);
+        return 1;
+    }
+
+    mapSessionIDProcessID[sessionID] = ProcInfo.dwProcessId; // запоминаем хендл процесса для завершения при завершении службы
+
+    // Освобождаем память закрываем токены дискрипторы структуры
+    CloseHandle(ProcInfo.hProcess);
+    CloseHandle(ProcInfo.hThread);
+    DestroyEnvironmentBlock(pEnvBlock);
+    CloseHandle(phTokenService);
+    CloseHandle(phDuplicateToken);
+    CloseHandle(phTokenUser);
+
+    return 0;
+}
+
+// Запуск службы 2UTM
+int startService2UTM()
+{
+    SC_HANDLE schSCManager, schService;
+    SERVICE_STATUS_PROCESS ssStatus;
+    DWORD dwBytesNeeded;
+
+    // Открываем менеджер служб
+    schSCManager = OpenSCManager(0, 0, SC_MANAGER_ALL_ACCESS);
+
+    // Открываем службу
+    schService = OpenService(schSCManager, "2UTM_service", SERVICE_ALL_ACCESS);
+
+    // Запуск службы
+    if (StartService(schService, 0, NULL) == 0)
+    {
+        CloseServiceHandle(schService);
+        CloseServiceHandle(schSCManager);
+        return 1;
+    }
+
+    // Обновляем статус в структуре
+    if (QueryServiceStatusEx(schService, SC_STATUS_PROCESS_INFO, (LPBYTE)&ssStatus, sizeof(SERVICE_STATUS_PROCESS), &dwBytesNeeded) == 0)
+    {
+        CloseServiceHandle(schService);
+        CloseServiceHandle(schSCManager);
+        return 1;
+    }
+
+    // Ждем пока служба запустится
+    while (ssStatus.dwCurrentState == SERVICE_START_PENDING)
+    {
+        Sleep(1000);
+
+        // Обновляем статус в структуре
+        if (QueryServiceStatusEx(schService, SC_STATUS_PROCESS_INFO, (LPBYTE)&ssStatus, sizeof(SERVICE_STATUS_PROCESS), &dwBytesNeeded) == 0)
+        {
+            CloseServiceHandle(schService);
+            CloseServiceHandle(schSCManager);
+            return 1;
+        }
+    }
+
+    // Если служба запущена, возвращаем 0, иначе 1
+    if (ssStatus.dwCurrentState == SERVICE_RUNNING)
+    {
+        CloseServiceHandle(schService);
+        CloseServiceHandle(schSCManager);
+        return 0;
+    }
+    CloseServiceHandle(schService);
+    CloseServiceHandle(schSCManager);
+    return 1;
+}
+
+// Остановка службы 2UTM
+int stopService2UTM()
+{
+    SC_HANDLE schSCManager, schService;
+    SERVICE_STATUS_PROCESS ssStatus;
+    DWORD dwBytesNeeded;
+
+    // Открываем менеджер служб
+    schSCManager = OpenSCManager(0, 0, SC_MANAGER_ALL_ACCESS);
+
+    // Открываем службу
+    schService = OpenService(schSCManager, "2UTM_service", SERVICE_ALL_ACCESS);
+
+    // Останавливаем службу
+    SERVICE_STATUS ServiceSt;
+    if (ControlService(schService, SERVICE_CONTROL_STOP, &ServiceSt) == 0)
+    {
+        CloseServiceHandle(schSCManager);
+        CloseServiceHandle(schService);
+        return 1;
+    }
+
+    // Получаем статус службы
+    if (QueryServiceStatusEx(schService, SC_STATUS_PROCESS_INFO, (LPBYTE)&ssStatus, sizeof(SERVICE_STATUS_PROCESS), &dwBytesNeeded) == 0)
+    {
+        CloseServiceHandle(schService);
+        CloseServiceHandle(schSCManager);
+        return 1;
+    }
+
+    // Ждем пока служба остановится
+    while (ssStatus.dwCurrentState == SERVICE_STOP_PENDING)
+    {
+        Sleep(1000);
+
+        // Обновляем статус в структуре
+        if (QueryServiceStatusEx(schService, SC_STATUS_PROCESS_INFO, (LPBYTE)&ssStatus, sizeof(SERVICE_STATUS_PROCESS), &dwBytesNeeded) == 0)
+        {
+            CloseServiceHandle(schService);
+            CloseServiceHandle(schSCManager);
+            return 1;
+        }
+    }
+
+    // Если служба остановлена, возвращаем 0, иначе 1
+    if (ssStatus.dwCurrentState == SERVICE_STOPPED)
+    {
+        CloseServiceHandle(schService);
+        CloseServiceHandle(schSCManager);
+        return 0;
+    }
+    CloseServiceHandle(schService);
+    CloseServiceHandle(schSCManager);
+    return 1;
+}
+
+// Проверка на существование процесса explorer.exe
+int checkExplorerExe()
+{
+    WTS_PROCESS_INFO* pProcessInfo;
+    DWORD NumProcesses;
+
+    if (WTSEnumerateProcesses(WTS_CURRENT_SERVER_HANDLE, 0, 1, &pProcessInfo, &NumProcesses) == 0)
+    {
+        return 2;
+    }
+
+    for (DWORD i = 0; i < NumProcesses; ++i)
+    {
+        if (std::string(pProcessInfo[i].pProcessName) == "explorer.exe")
+        {
+            WTSFreeMemory(pProcessInfo);
+            return 1;
+        }
+    }
+
+    WTSFreeMemory(pProcessInfo);
+    return 0;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Создание вкладок
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+// создание окружения для вкладок
+void StartCommonControls(DWORD flags)
+{
+    INITCOMMONCONTROLSEX iccx;
+    iccx.dwSize = sizeof(INITCOMMONCONTROLSEX);
+    iccx.dwICC = flags;
+    InitCommonControlsEx(&iccx);
+}
+
+// Создание окна вкладок
+HWND CreateTab(const HWND hParent, const HINSTANCE hInst, DWORD dwStyle, const RECT& rc, const int id)
+{
+    dwStyle |= WS_CHILD | WS_VISIBLE;
+
+    return CreateWindowEx(0,                  //extended styles
+        WC_TABCONTROL,     //control 'class' name
+        0,                  //control caption
+        dwStyle,            //wnd style
+        rc.left,            //position: left
+        rc.top,             //position: top
+        rc.right,           //width
+        rc.bottom,          //height
+        hParent,            //parent window handle
+        (HMENU)id,          //control's ID
+        hInst,              //instance
+        0);                 //user defined info
+}
+
+// Добавление вкладок
+int InsertItem(HWND hTc, std::string txt, int item_index, int image_index, UINT mask)
+{
+    TCITEM tabPage = { 0 };
+
+    tabPage.mask = mask;
+    tabPage.pszText = (LPSTR)txt.c_str();
+    tabPage.cchTextMax = txt.length();
+    tabPage.iImage = image_index;
+    SendMessage(hTc, TCM_INSERTITEM, item_index, (LPARAM)&tabPage);
+
+    return 0;
+}
+
+// создание окна с вкладками
+int OnCreate(const HWND hwnd, CREATESTRUCT* cs)
+{
+    RECT rc = { 0,0,0,0 };
+    StartCommonControls(ICC_TAB_CLASSES);
+
+    hTabControl = CreateTab(hwnd, cs->hInstance, TCS_MULTILINE, rc, MainWidgetId::TAB_CONTOL);
+
+    // Сохраняем дескриптор управления вкладкой как пользовательские данные, связанные с
+    // родительским окном, чтобы его можно было извлечь для последующего использования
+    SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)hTabControl);
+
+    InsertItem(hTabControl, "Рутокены", 0, 0);
+    InsertItem(hTabControl, "УТМы и службы", 1, 1);
+
+    // Установка шрифта
+    HFONT font = CreateFont(
+        16,						// nHeight
+        0,						// nWidth
+        0,						// nEscapement
+        0,						// nOrientation
+        FW_NORMAL,				// nWeight
+        FALSE,					// bItalic
+        FALSE,					// bUnderline
+        FALSE,					// cStrikeOut
+        DEFAULT_CHARSET,		    // nCharSet
+        OUT_DEFAULT_PRECIS,		// nOutPrecision
+        CLIP_DEFAULT_PRECIS,	    // nClipPrecision
+        DEFAULT_QUALITY,		    // nQuality
+        VARIABLE_PITCH,			// nPitchAndFamily
+        "Tahoma");				// lpszFacename
+
+    SendMessage(hTabControl, WM_SETFONT, (WPARAM)font, TRUE);
+
+    return 0;
+}
+
+// регулировка размера и расположения вкладок
+void OnSize(const HWND hwnd, int cx, int cy, UINT flags)
+{
+    // Получаем дескриптор управления заголовком, который ранее был сохранен в пользовательском
+    // данные, связанные с родительским окном.
+    HWND hTabCntrl = (HWND)(LONG_PTR)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+
+    MoveWindow(hTabCntrl, 1, 1, cx - 1, cy - 18, TRUE);
+}
+
+// Показать/скрыть виджеты в определенной влкадке
+int showOrHideOption(int tab)
+{
+    switch (tab)
+    {
+    case 0: // токены
+    {
+        ShowWindow(hListBoxTokensGlobal, SW_NORMAL);
+        ShowWindow(hEditInfoTokens, SW_NORMAL);
+        
+        ShowWindow(hListBoxUTMServiceGlobal, SW_HIDE);
+
+        break;
+    }
+    case 1: // утм и службы
+    {
+        ShowWindow(hListBoxUTMServiceGlobal, SW_NORMAL);
+
+        ShowWindow(hListBoxTokensGlobal, SW_HIDE);
+        ShowWindow(hEditInfoTokens, SW_HIDE);
+
+        break;
+    }
+    default:
+        break;
+    }
+
+    return 0;
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// проверка на наличие служб утм по кол ву из конфига, и запрос на главную страницу
+int checkServiceUTM()
+{
+    logger("Получение информации о службах УТМ", "INFO");
+
+    // получаем кол во утм из конфига
+    std::string countUTM;
+    if (readConfigCountUTM(countUTM) == 1)
+    {
+        logger("Ошибка получения кол ва УТМ при проверке наличия служб УТМ - " + std::to_string(GetLastError()), "ERROR");
+        return 1;
+    }
+    std::vector<std::string> vecUTMService;
+    int intCountUTM = atoi(countUTM.c_str());
+    for (int i = 1; i <= intCountUTM; ++i)
+    {
+        if (i == 1)
+        {
+            vecUTMService.push_back("Transport");
+        }
+        else
+        {
+            vecUTMService.push_back("Transport" + std::to_string(i));
+        }
+    }
+
+    // проверка наличие служб УТМ и их статус
+    std::vector<std::string> vecServiceStatus;
+    if (getServiceList(vecUTMService, vecServiceStatus) == 1)
+    {
+        logger("Ошибка получения статуса служб при проверке наличия служб УТМ - " + std::to_string(GetLastError()), "ERROR");
+        return 1;
+    }
+
+    // заполняем листбокс утм и службы
+    if (fillListBoxUTMService(vecServiceStatus) == 1)
+    {
+        logger("Ошибка заполнения листбокса при проверке наличия служб УТМ - вектор vecServiceStatus пуст", "ERROR");
+        // Удаляем все строки в листвью контактов
+        ListView_DeleteAllItems(hListBoxUTMServiceGlobal);
+
+        return 1;
+    }
+
+    logger("Получение информации о службах УТМ успешно завершено", "INFO");
+
+    return 0;
+}
+
+// получение списка всех служб
+int getServiceList(std::vector<std::string> vecUTMService, std::vector<std::string>& vecServiceStatus)
+{
+    SC_HANDLE hHandle = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+    if (!hHandle)
+    {
+        logger("Ошибка OpenSCManager - " + std::to_string(GetLastError()), "ERROR");
+        return 1;
+    }
+
+    vecPathService.clear();
+
+    DWORD dwBytesNeeded = 0;
+    DWORD dwServicesReturned = 0;
+    DWORD dwResumedHandle = 0;
+
+    // Выясняем, какой нужен буффер для информации
+    BOOL retVal = EnumServicesStatus(hHandle, SERVICE_WIN32, SERVICE_STATE_ALL,
+        NULL, 0, &dwBytesNeeded, &dwServicesReturned, &dwResumedHandle);
+    if (retVal == 0)
+    {
+        if (GetLastError() != ERROR_MORE_DATA)
+        {
+            logger("Ошибка EnumServicesStatus с NULL- " + std::to_string(GetLastError()), "ERROR");
+        }
+        // Делаем буффер и получаем информацию из структур
+        else
+        {
+            DWORD dwBytesNeeded2 = 0;
+            LPQUERY_SERVICE_CONFIG lpsc = { 0 };
+            LPENUM_SERVICE_STATUS pServices = { 0 };
+            pServices = new ENUM_SERVICE_STATUS[dwBytesNeeded];
+            if (EnumServicesStatus(hHandle, SERVICE_WIN32, SERVICE_STATE_ALL,
+                pServices, dwBytesNeeded, &dwBytesNeeded2, &dwServicesReturned, &dwResumedHandle) == 0)
+            {
+                logger("Ошибка EnumServicesStatus - " + std::to_string(GetLastError()), "ERROR");
+            }
+            else
+            {
+                for (std::string elem : vecUTMService)
+                {
+                    for (DWORD i = 0; i < dwServicesReturned; ++i)
+                    {
+                        if (strcmp(elem.c_str(), (pServices + i)->lpDisplayName) == 0)
+                        {
+                            std::string str;
+
+                            SC_HANDLE service = OpenService(hHandle, (pServices + i)->lpDisplayName, SC_MANAGER_ALL_ACCESS);
+                            if (service == NULL)
+                            {
+                                logger("Ошибка OpenService - " + std::to_string(GetLastError()), "ERROR");
+                                vecPathService.push_back("Путь не доступен");
+                            }
+
+                            // Выясняем, какой нужен буффер для информации
+                            dwBytesNeeded = 0;
+                            if (QueryServiceConfig(service, NULL, 0, &dwBytesNeeded) == 0)
+                            {
+                                if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+                                {
+                                    logger("Ошибка QueryServiceConfig с NULL- " + std::to_string(GetLastError()), "ERROR");
+                                    vecPathService.push_back("Путь не доступен");
+                                }
+                            }
+                            // Делаем буффер и получаем информацию из структур
+                            lpsc = new QUERY_SERVICE_CONFIG[sizeof(QUERY_SERVICE_CONFIG) + dwBytesNeeded];
+                            dwBytesNeeded2 = 0;
+                            if (QueryServiceConfig(service, lpsc, dwBytesNeeded, &dwBytesNeeded2) == 0)
+                            {
+                                logger("Ошибка QueryServiceConfig - " + std::to_string(GetLastError()), "ERROR");
+                                str += "Путь не доступен - ";
+                            }
+                            vecPathService.push_back(std::string(lpsc->lpBinaryPathName));
+
+                            str += (pServices + i)->lpDisplayName;
+                            if ((pServices + i)->ServiceStatus.dwCurrentState == 4)
+                            {
+                                str += " - Запущена";
+                            }
+                            else
+                            {
+                                str += " - Не запущена";
+                            }
+                            vecServiceStatus.push_back(str);
+                            break;
+                        }
+                    }
+                }
+            }
+            delete[] lpsc;
+            delete[] pServices;
+            pServices = NULL;
+        }
+    }
+    if (!CloseServiceHandle(hHandle))
+    {
+        logger("Ошибка CloseServiceHandle - " + std::to_string(GetLastError()), "ERROR");
+        return 1;
+    }
+    
+    return 0;
+}
+
+// заполнение листбокса утм и службы
+int fillListBoxUTMService(std::vector<std::string> vecServiceStatus)
+{
+    if (vecServiceStatus.empty())
+    {
+        return 1;
+    }
+
+    //EnableWindow(hListBoxUTMServiceGlobal, TRUE);
+
+    // Удаляем все строки в листвью контактов
+    ListView_DeleteAllItems(hListBoxUTMServiceGlobal);
+
+    // Заполняем
+    for (int i = 0; i < vecServiceStatus.size(); ++i)
+    {
+        std::string s = "      " + vecServiceStatus[i]; // пробелы для красоты
+        if (s.find("Запущена") != std::string::npos) // для подбора картинок
+        {
+            CreateItem(hListBoxUTMServiceGlobal, (CHAR*)s.c_str(), i, 1);
+        }
+        else
+        {
+            CreateItem(hListBoxUTMServiceGlobal, (CHAR*)s.c_str(), i, 2);
+        }
+    }
+
+    //EnableWindow(hListBoxUTMServiceGlobal, FALSE);
+
+    return 0;
+}
+
+// создание колонки в листвью
+int CreateColumn(HWND hwndLV, int iCol, CHAR* Text, int iWidth)
+{
+    LVCOLUMN lvc;
+
+    lvc.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM;
+    lvc.fmt = LVCFMT_LEFT;
+    lvc.cx = iWidth;
+    lvc.pszText = Text;
+    lvc.iSubItem = iCol;
+    return ListView_InsertColumn(hwndLV, iCol, &lvc);
+}
+
+// создание элемента в листвью
+int CreateItem(HWND hwndList, CHAR* text, int index, int status)
+{
+    LVITEM lvi = { 0 };
+    int res;
+
+    // Initialize LVITEM members that are common to all items. 
+    lvi.mask = LVIF_TEXT | LVIF_PARAM | LVIF_IMAGE;
+    lvi.iItem = index;
+    lvi.pszText = text;
+    lvi.iImage = status; // индекс картинки в списке hSmall
+    lvi.lParam = 0;
+    res = ListView_InsertItem(hwndList, &lvi);
+
+    if (res >= 0)
+    {
+        ListView_SetItemText(hwndList, res, 0, text);
+    }
+
+    return res;
+>>>>>>> Stashed changes
 }

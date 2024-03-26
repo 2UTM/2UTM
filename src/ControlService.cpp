@@ -195,8 +195,8 @@ int deleteServiceUTM(int numberUTM)
     return 0;
 }
 
-// проверка работы УТМ (запрос на главную страницу УТМ через curl)
-int checkHomePageUTM(std::string port, bool flagStartUTM)
+// проверка работы УТМ (запрос на главную страницу УТМ)
+int checkHomePageUTM(std::string port, bool flagStartUTM, int timeout)
 {
     // если пользователь прервал, выходим
     if (flagStartUTM == false)
@@ -242,7 +242,7 @@ int checkHomePageUTM(std::string port, bool flagStartUTM)
     BOOL check;
     int count = 0;
     int err = 0;
-    while (count < 86)
+    while (count < timeout)
     {
         // если пользователь прервал, выходим
         if (flagStartUTM == false)
