@@ -1,6 +1,6 @@
 /*************************************************************************
 * Rutoken                                                                *
-* Copyright (c) 2003-2021, Aktiv-Soft JSC. All rights reserved.          *
+* Copyright (c) 2003-2023, Aktiv-Soft JSC. All rights reserved.          *
 * Подробная информация:  http://www.rutoken.ru                           *
 *------------------------------------------------------------------------*
 * Данный файл содержит объявление констант для работы с Рутокен при      *
@@ -33,7 +33,9 @@
 #include "win2nix.h"
 #include "wintypes.h"
 
-#include "rtpkcs11.h"
+#include <rtpkcs11.h>
+
+#include <stdlib.h>
 
 /************************************************************************
 * Макросы                                                               *
@@ -52,8 +54,8 @@
 #endif
 #ifdef __APPLE__
 /* Библиотека только для Рутокен ЭЦП, поддерживает алгоритмы ГОСТ и RSA */
-	#define PKCS11_LIBRARY_NAME         "librtpkcs11ecp.dylib"
-	#define PKCS11ECP_LIBRARY_NAME      "librtpkcs11ecp.dylib"
+	#define PKCS11_LIBRARY_NAME         "rtpkcs11ecp.framework/rtpkcs11ecp"
+	#define PKCS11ECP_LIBRARY_NAME      "rtpkcs11ecp.framework/rtpkcs11ecp"
 #endif
 
 #ifndef TOKEN_TYPE_RUTOKEN
@@ -68,7 +70,7 @@
 #define arraysize(a)                (sizeof(a) / sizeof(a[0]))
 
 /* Максимальный размер массива с хэндлами */
-#define MAX_OBJECTS_ARRAY_SIZE     100
+#define MAX_OBJECTS_ARRAY_SIZE      100
 
 /* Предопределенная константа RSA */
 #define RSAENH_MAGIC_RSA1           0x31415352
@@ -85,8 +87,17 @@
 /* Размер открытого ключа ГОСТ Р 34.10-2012(512) в байтах */
 #define GOST_3410_12_512_KEY_SIZE   128
 
+/* Размер симметричного ключа KEG в байтах */
+#define KEG_KEY_SIZE                64
+
 /* Размер синхропосылки в байтах */
 #define UKM_LENGTH                  8
+
+/* Размер UKM для KEG 256 в байтах */
+#define UKM_KEG_256_LENGTH          24
+
+/* Размер UKM для KEG 512 в байтах */
+#define UKM_KEG_512_LENGTH          16
 
 /* Размер блока в байтах */
 #define GOST28147_89_BLOCK_SIZE     8
@@ -148,27 +159,27 @@ static CK_BYTE secp256k1Oid[] = { 0x06, 0x05, 0x2B, 0x81, 0x04, 0x00, 0x0A };
 /* DEMO PIN-код Пользователя Рутокен */
 static CK_UTF8CHAR USER_PIN[] = { "12345678" };
 
-#define USER_PIN_LEN (sizeof(USER_PIN)-1)
+#define USER_PIN_LEN (sizeof(USER_PIN) - 1)
 
 /* Новый DEMO PIN-код Пользователя Рутокен */
 static CK_UTF8CHAR NEW_USER_PIN[] = { "55555555" };
 
-#define NEW_USER_PIN_LEN (sizeof(NEW_USER_PIN)-1)
+#define NEW_USER_PIN_LEN (sizeof(NEW_USER_PIN) - 1)
 
 /* Неправильный DEMO PIN-код Пользователя Рутокен */
 static CK_UTF8CHAR WRONG_USER_PIN[] = { "00000000" };
 
-#define WRONG_USER_PIN_LEN (sizeof(WRONG_USER_PIN)-1)
+#define WRONG_USER_PIN_LEN (sizeof(WRONG_USER_PIN) - 1)
 
 /* DEMO PIN-код Администратора Рутокен */
 static CK_UTF8CHAR SO_PIN[] = { "87654321" };
 
-#define SO_PIN_LEN (sizeof(SO_PIN)-1)
+#define SO_PIN_LEN (sizeof(SO_PIN) - 1)
 
 /* DEMO локальный PIN-код Рутокен */
 static CK_UTF8CHAR LOCAL_PIN[] = { "1234567890" };
 
-#define LOCAL_PIN_LEN (sizeof(LOCAL_PIN)-1)
+#define LOCAL_PIN_LEN (sizeof(LOCAL_PIN) - 1)
 
 /************************************************************************
 * Описание типов объектов                                               *
@@ -190,45 +201,47 @@ static CK_KEY_TYPE keyTypeGostR3410_2012_256 = CKK_GOSTR3410;
 static CK_KEY_TYPE keyTypeGostR3410_2012_512 = CKK_GOSTR3410_512;
 static CK_KEY_TYPE keyTypeKuznechik = CKK_KUZNECHIK;
 static CK_KEY_TYPE keyTypeMagma = CKK_MAGMA;
+static CK_KEY_TYPE keyTypeKuznechikTwin = CKK_KUZNECHIK_TWIN_KEY;
+static CK_KEY_TYPE keyTypeMagmaTwin = CKK_MAGMA_TWIN_KEY;
 
 /************************************************************************
 * Описание меток объектов                                               *
 ************************************************************************/
 /* DEMO-метка открытого ключа RSA */
-static CK_UTF8CHAR publicKeyLabelRsa[] = {"Sample RSA Public Key (Aktiv Co.)"};
+static CK_UTF8CHAR publicKeyLabelRsa[] = { "Sample RSA Public Key (Aktiv Co.)" };
 
 /* DEMO-метка закрытого ключа RSA */
-static CK_UTF8CHAR privateKeyLabelRsa[] = {"Sample RSA Private Key (Aktiv Co.)"};
+static CK_UTF8CHAR privateKeyLabelRsa[] = { "Sample RSA Private Key (Aktiv Co.)" };
 
 /* DEMO ID пары ключей RSA */
-static CK_BYTE keyPairIdRsa[] = {"RSA sample key pair ID (Aktiv Co.)"};
+static CK_BYTE keyPairIdRsa[] = { "RSA sample key pair ID (Aktiv Co.)" };
 
 /* DEMO-метка открытого ключа ECDSA */
-static CK_UTF8CHAR publicKeyLabelEcdsa[] = {"Sample ECDSA Public Key (Aktiv Co.)"};
+static CK_UTF8CHAR publicKeyLabelEcdsa[] = { "Sample ECDSA Public Key (Aktiv Co.)" };
 
 /* DEMO-метка закрытого ключа ECDSA */
-static CK_UTF8CHAR privateKeyLabelEcdsa[] = {"Sample ECDSA Private Key (Aktiv Co.)"};
+static CK_UTF8CHAR privateKeyLabelEcdsa[] = { "Sample ECDSA Private Key (Aktiv Co.)" };
 
 /* DEMO ID пары ключей ECDSA */
 static CK_BYTE keyPairIdEcdsa[] = { "ECDSA sample key pair ID (Aktiv Co.)" };
 
 /* DEMO-метка  открытого ключа #1 ГОСТ Р 34.10-2001 */
-static CK_UTF8CHAR publicKeyLabelGost2001_1[] = {"Sample GOST R 34.10-2001 Public Key 1 (Aktiv Co.)"};
+static CK_UTF8CHAR publicKeyLabelGost2001_1[] = { "Sample GOST R 34.10-2001 Public Key 1 (Aktiv Co.)" };
 
 /* DEMO-метка  закрытого ключа #1 ГОСТ Р 34.10-2001 */
-static CK_UTF8CHAR privateKeyLabelGost2001_1[] = {"Sample GOST R 34.10-2001 Private Key 1 (Aktiv Co.)"};
+static CK_UTF8CHAR privateKeyLabelGost2001_1[] = { "Sample GOST R 34.10-2001 Private Key 1 (Aktiv Co.)" };
 
 /* DEMO ID пары ключей #1 ГОСТ Р 34.10-2001 */
-static CK_BYTE keyPairIdGost2001_1[] = {"GOST R 34.10-2001 sample key pair 1 ID (Aktiv Co.)"};
+static CK_BYTE keyPairIdGost2001_1[] = { "GOST R 34.10-2001 sample key pair 1 ID (Aktiv Co.)" };
 
 /* DEMO-метка открытого ключа #2 ГОСТ Р 34.10-2001 */
-static CK_UTF8CHAR publicKeyLabelGost2001_2[] = {"Sample GOST R 34.10-2001 Public Key 2 (Aktiv Co.)"};
+static CK_UTF8CHAR publicKeyLabelGost2001_2[] = { "Sample GOST R 34.10-2001 Public Key 2 (Aktiv Co.)" };
 
 /* DEMO-метка закрытого ключа #2 ГОСТ Р 34.10-2001 */
-static CK_UTF8CHAR privateKeyLabelGost2001_2[] = {"Sample GOST R 34.10-2001 Private Key 2 (Aktiv Co.)"};
+static CK_UTF8CHAR privateKeyLabelGost2001_2[] = { "Sample GOST R 34.10-2001 Private Key 2 (Aktiv Co.)" };
 
 /* DEMO ID пары ключей #2 ГОСТ Р 34.10-2001 */
-static CK_BYTE keyPairIdGost2001_2[] = {"GOST R 34.10-2001 sample key pair 2 ID (Aktiv Co.)"};
+static CK_BYTE keyPairIdGost2001_2[] = { "GOST R 34.10-2001 sample key pair 2 ID (Aktiv Co.)" };
 
 /* DEMO-метка  открытого ключа #1 ГОСТ Р 34.10-2012(256) */
 static CK_UTF8CHAR publicKeyLabelGost2012_256_1[] = { "Sample GOST R 34.10-2012 (256 bits) Public Key 1 (Aktiv Co.)" };
@@ -267,31 +280,31 @@ static CK_UTF8CHAR privateKeyLabelGost2012_512_2[] = { "Sample GOST R 34.10-2012
 static CK_BYTE keyPairIdGost2012_512_2[] = { "GOST R 34.10-2012 (512 bits) sample key pair 2 ID (Aktiv Co.)" };
 
 /* DEMO-метка симметричного ключа ГОСТ 28147-89 */
-static CK_UTF8CHAR secretKeyLabel[] = {"Sample GOST 28147-89 Secret Key (Aktiv Co.)"};
+static CK_UTF8CHAR secretKeyLabel[] = { "Sample GOST 28147-89 Secret Key (Aktiv Co.)" };
 
 /* DEMO-метка симметричного ключа ГОСТ 34.12-2018 с длиной блока 128 бит (Кузнечик) */
-static CK_UTF8CHAR secretKeyKuznechikLabel[] = {"Sample Kuznechik Secret Key (Aktiv Co.)"};
+static CK_UTF8CHAR secretKeyKuznechikLabel[] = { "Sample Kuznechik Secret Key (Aktiv Co.)" };
 
 /* DEMO-метка симметричного ключа ГОСТ 34.12-2018 с длиной блока 64 бита (Магма) */
-static CK_UTF8CHAR secretKeyMagmaLabel[] = {"Sample Magma Secret Key (Aktiv Co.)"};
+static CK_UTF8CHAR secretKeyMagmaLabel[] = { "Sample Magma Secret Key (Aktiv Co.)" };
 
 /* DEMO ID симметричного ключа ГОСТ 28147-89 */
-static CK_BYTE secretKeyId[] = {"GOST 28147-89 Secret Key ID (Aktiv Co.)"};
+static CK_BYTE secretKeyId[] = { "GOST 28147-89 Secret Key ID (Aktiv Co.)" };
 
 /* DEMO ID симметричного ключа ГОСТ 34.12-2018 с длиной блока 128 бит (Кузнечик) */
-static CK_BYTE secretKeyKuznechikId[] = {"Kuznechik Secret Key ID (Aktiv Co.)"};
+static CK_BYTE secretKeyKuznechikId[] = { "Kuznechik Secret Key ID (Aktiv Co.)" };
 
 /* DEMO ID симметричного ключа ГОСТ 34.12-2018 с длиной блока 64 бита (Магма) */
-static CK_BYTE secretKeyMagmaId[] = {"Magma Secret Key ID (Aktiv Co.)"};
+static CK_BYTE secretKeyMagmaId[] = { "Magma Secret Key ID (Aktiv Co.)" };
 
 /* DEMO-метка выработанного ключа обмена */
-static CK_UTF8CHAR derivedKeyLabel[] = {"Derived GOST 28147-89 key"};
+static CK_UTF8CHAR derivedKeyLabel[] = { "Derived GOST 28147-89 key" };
 
 /* DEMO-метка для сессионного ключа */
-static CK_UTF8CHAR sessionKeyLabel[] = {"GOST 28147-89 key to wrap"};
+static CK_UTF8CHAR sessionKeyLabel[] = { "GOST 28147-89 key to wrap" };
 
 /* DEMO-метка для демаскированного ключа */
-static CK_UTF8CHAR unwrappedKeyLabel[] = {"Unwrapped GOST 28147-89 key"};
+static CK_UTF8CHAR unwrappedKeyLabel[] = { "Unwrapped GOST 28147-89 key" };
 
 /* DEMO-метка для объекта с бинарными данными */
 static CK_UTF8CHAR dataObjectLabel[] = "Sample data object label (Aktiv Co.)";
@@ -303,68 +316,68 @@ static CK_UTF8CHAR applicationLabel[] = "Sample application label (Aktiv Co.)";
 * Описание меток токена                                                 *
 ************************************************************************/
 /* DEMO метка Rutoken ("длинная") */
-static CK_CHAR tokenLongLabel[] = {"!!!Sample Rutoken Long-long-long-long-long label!!!"};
+static CK_CHAR tokenLongLabel[] = { "!!!Sample Rutoken Long-long-long-long-long label!!!" };
 
 /* DEMO метка Rutoken ("обычная") */
-static CK_CHAR tokenStdLabel[] = {"!!!Sample Rutoken label!!!"};
+static CK_CHAR tokenStdLabel[] = { "!!!Sample Rutoken label!!!" };
 
 /* DEMO метка Rutoken */
 static CK_UTF8CHAR tokenLabel[] = { 'M', 'y', ' ', 'R', 'u', 't', 'o', 'k',
-                                    'e', 'n', ' ', ' ', ' ', ' ', ' ', ' ',
-                                    ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
-                                    ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ' };
+	                                'e', 'n', ' ', ' ', ' ', ' ', ' ', ' ',
+	                                ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
+	                                ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ' };
 
 /*************************************************************************
 * Механизмы PKCS#11                                                      *
 *************************************************************************/
-/*  Механизм генерации ключевой пары RSA */
-static CK_MECHANISM rsaKeyPairGenMech = {CKM_RSA_PKCS_KEY_PAIR_GEN, NULL_PTR, 0};
+/* Механизм генерации ключевой пары RSA */
+static CK_MECHANISM rsaKeyPairGenMech = { CKM_RSA_PKCS_KEY_PAIR_GEN, NULL_PTR, 0 };
 
 /* Механизм шифрования/расшифрования по алгоритму RSA */
-static CK_MECHANISM rsaEncDecMech = {CKM_RSA_PKCS, NULL_PTR, 0};
+static CK_MECHANISM rsaEncDecMech = { CKM_RSA_PKCS, NULL_PTR, 0 };
 
 /* Механизм подписи/проверки подписи по алгоритму RSA */
-static CK_MECHANISM rsaSigVerMech = {CKM_RSA_PKCS, NULL_PTR, 0};
+static CK_MECHANISM rsaSigVerMech = { CKM_RSA_PKCS, NULL_PTR, 0 };
 
-/*  Механизм подписи/проверки подписи по алгоритму RSA со встроенным хэшированием по алгоритму SHA-256 */
-static CK_MECHANISM rsaSigVerMech_WithSha256 = {CKM_SHA256_RSA_PKCS, NULL_PTR, 0};
+/* Механизм подписи/проверки подписи по алгоритму RSA со встроенным хэшированием по алгоритму SHA-256 */
+static CK_MECHANISM rsaSigVerMech_WithSha256 = { CKM_SHA256_RSA_PKCS, NULL_PTR, 0 };
 
-/*  Механизм генерации ключевой пары ECDSA */
-static CK_MECHANISM ecdsaKeyPairGenMech = {CKM_EC_KEY_PAIR_GEN, NULL_PTR, 0};
+/* Механизм генерации ключевой пары ECDSA */
+static CK_MECHANISM ecdsaKeyPairGenMech = { CKM_EC_KEY_PAIR_GEN, NULL_PTR, 0 };
 
 /* Механизм подписи/проверки подписи по алгоритму ECDSA */
-static CK_MECHANISM ecdsaSigVerMech = {CKM_ECDSA, NULL_PTR, 0};
+static CK_MECHANISM ecdsaSigVerMech = { CKM_ECDSA, NULL_PTR, 0 };
 
-/*  Механизм генерации ключевой пары ГОСТ Р 34.10-2001 */
-static CK_MECHANISM gostR3410_2001KeyPairGenMech = {CKM_GOSTR3410_KEY_PAIR_GEN, NULL_PTR, 0};
+/* Механизм генерации ключевой пары ГОСТ Р 34.10-2001 */
+static CK_MECHANISM gostR3410_2001KeyPairGenMech = { CKM_GOSTR3410_KEY_PAIR_GEN, NULL_PTR, 0 };
 
-/*  Механизм генерации ключевой пары ГОСТ Р 34.10-2012(256) */
+/* Механизм генерации ключевой пары ГОСТ Р 34.10-2012(256) */
 static CK_MECHANISM gostR3410_2012_256KeyPairGenMech = { CKM_GOSTR3410_KEY_PAIR_GEN, NULL_PTR, 0 };
 
-/*  Механизм генерации ключевой пары ГОСТ Р 34.10-2012(512) */
+/* Механизм генерации ключевой пары ГОСТ Р 34.10-2012(512) */
 static CK_MECHANISM gostR3410_2012_512KeyPairGenMech = { CKM_GOSTR3410_512_KEY_PAIR_GEN, NULL_PTR, 0 };
 
-/*  Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2001 */
-static CK_MECHANISM gostR3410_2001SigVerMech = {CKM_GOSTR3410, NULL_PTR, 0};
+/* Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2001 */
+static CK_MECHANISM gostR3410_2001SigVerMech = { CKM_GOSTR3410, NULL_PTR, 0 };
 
-/*  Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2012(256) */
+/* Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2012(256) */
 static CK_MECHANISM gostR3410_2012_256SigVerMech = { CKM_GOSTR3410, NULL_PTR, 0 };
 
-/*  Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2012(512) */
+/* Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2012(512) */
 static CK_MECHANISM gostR3410_2012_512SigVerMech = { CKM_GOSTR3410_512, NULL_PTR, 0 };
 
-/*  Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2001 со встроенным хэшированием по алгоритму ГОСТ Р 34.11-94 */
-static CK_MECHANISM gostR3410_2001SigVerMech_WithHash = {CKM_GOSTR3410_WITH_GOSTR3411, NULL_PTR, 0};
+/* Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2001 со встроенным хэшированием по алгоритму ГОСТ Р 34.11-94 */
+static CK_MECHANISM gostR3410_2001SigVerMech_WithHash = { CKM_GOSTR3410_WITH_GOSTR3411, NULL_PTR, 0 };
 
-/*  Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2012(256) со встроенным хэшированием по алгоритму ГОСТ Р 34.11-2012(256) */
-static CK_MECHANISM gostR3410_2012_256SigVerMech_WithHash = {CKM_GOSTR3410_WITH_GOSTR3411_12_256, NULL_PTR, 0};
+/* Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2012(256) со встроенным хэшированием по алгоритму ГОСТ Р 34.11-2012(256) */
+static CK_MECHANISM gostR3410_2012_256SigVerMech_WithHash = { CKM_GOSTR3410_WITH_GOSTR3411_12_256, NULL_PTR, 0 };
 
-/*  Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2012(512) со встроенным хэшированием по алгоритму ГОСТ Р 34.11-2012(512) */
-static CK_MECHANISM gostR3410_2012_512SigVerMech_WithHash = {CKM_GOSTR3410_WITH_GOSTR3411_12_512, NULL_PTR, 0};
+/* Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2012(512) со встроенным хэшированием по алгоритму ГОСТ Р 34.11-2012(512) */
+static CK_MECHANISM gostR3410_2012_512SigVerMech_WithHash = { CKM_GOSTR3410_WITH_GOSTR3411_12_512, NULL_PTR, 0 };
 
-/*  Механизмы генерации симметричного ключа по алгоритму ГОСТ 34.12 */
-static CK_MECHANISM kuznechikKeyGenMech = {CKM_KUZNECHIK_KEY_GEN, NULL_PTR, 0};
-static CK_MECHANISM magmaKeyGenMech = {CKM_MAGMA_KEY_GEN, NULL_PTR, 0};
+/* Механизмы генерации симметричного ключа по алгоритму ГОСТ 34.12 */
+static CK_MECHANISM kuznechikKeyGenMech = { CKM_KUZNECHIK_KEY_GEN, NULL_PTR, 0 };
+static CK_MECHANISM magmaKeyGenMech = { CKM_MAGMA_KEY_GEN, NULL_PTR, 0 };
 
 /* Механизмы шифрования/расшифрования по алгоритму ГОСТ 34.12 */
 static CK_MECHANISM kuznechikEncDecEcbMech = { CKM_KUZNECHIK_ECB, NULL_PTR, 0 };
@@ -374,52 +387,55 @@ static CK_MECHANISM magmaEncDecEcbMech = { CKM_MAGMA_ECB, NULL_PTR, 0 };
 static CK_BYTE magmaEncMechParams[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, };
 static CK_MECHANISM magmaEncDecMech = { CKM_MAGMA_CTR_ACPKM, &magmaEncMechParams, sizeof(magmaEncMechParams) };
 
-/*  Механизм выработки имитовставки ГОСТ 34.12 */
+/* Механизм выработки имитовставки ГОСТ 34.12 */
 static CK_MECHANISM kuznechikMacMech = { CKM_KUZNECHIK_MAC, NULL_PTR, 0 };
 static CK_MECHANISM magmaMacMech = { CKM_MAGMA_MAC, NULL_PTR, 0 };
 
-/*  Механизм генерации симметричного ключа по алгоритму ГОСТ 28147-89 */
-static CK_MECHANISM gost28147KeyGenMech = {CKM_GOST28147_KEY_GEN, NULL_PTR, 0};
+/* Механизм генерации симметричного ключа по алгоритму ГОСТ 28147-89 */
+static CK_MECHANISM gost28147KeyGenMech = { CKM_GOST28147_KEY_GEN, NULL_PTR, 0 };
 
 /* Механизм шифрования/расшифрования по алгоритму ГОСТ 28147-89 */
-static CK_MECHANISM gost28147EncDecEcbMech = {CKM_GOST28147_ECB, NULL_PTR, 0};
-static CK_MECHANISM gost28147EncDecMech = {CKM_GOST28147, NULL_PTR, 0 };
+static CK_MECHANISM gost28147EncDecEcbMech = { CKM_GOST28147_ECB, NULL_PTR, 0 };
+static CK_MECHANISM gost28147EncDecMech = { CKM_GOST28147, NULL_PTR, 0 };
 
-/*  Механизм выработки имитовставки ГОСТ 28147-89 */
-static CK_MECHANISM gost28147MacMech = {CKM_GOST28147_MAC, NULL_PTR, 0};
+/* Механизм выработки имитовставки ГОСТ 28147-89 */
+static CK_MECHANISM gost28147MacMech = { CKM_GOST28147_MAC, NULL_PTR, 0 };
 
-/*  Механизм выработки HMAC по алгоритму ГОСТ Р 34.11-94 */
-static CK_MECHANISM gostR3411HmacMech = {CKM_GOSTR3411_HMAC, NULL_PTR, 0};
+/* Механизм выработки HMAC по алгоритму ГОСТ Р 34.11-94 */
+static CK_MECHANISM gostR3411HmacMech = { CKM_GOSTR3411_HMAC, NULL_PTR, 0 };
 
-/*  Механизм выработки HMAC по алгоритму ГОСТ Р 34.11-2012(256) */
+/* Механизм выработки HMAC по алгоритму ГОСТ Р 34.11-2012(256) */
 static CK_MECHANISM gostR3411_2012_256HmacMech = { CKM_GOSTR3411_12_256_HMAC, NULL_PTR, 0 };
 
-/*  Механизм выработки HMAC по алгоритму ГОСТ Р 34.11-2012(512) */
+/* Механизм выработки HMAC по алгоритму ГОСТ Р 34.11-2012(512) */
 static CK_MECHANISM gostR3411_2012_512HmacMech = { CKM_GOSTR3411_12_512_HMAC, NULL_PTR, 0 };
 
-/*  Механизм хэширования SHA-256 */
-static CK_MECHANISM sha256Mech = {CKM_SHA256, NULL_PTR, 0};
+/* Механизм хэширования SHA-256 */
+static CK_MECHANISM sha256Mech = { CKM_SHA256, NULL_PTR, 0 };
 
-/*  Механизм хэширования ГОСТ Р 34.11-94 */
-static CK_MECHANISM gostR3411_1994HashMech = {CKM_GOSTR3411, NULL_PTR, 0};
+/* Механизм хэширования ГОСТ Р 34.11-94 */
+static CK_MECHANISM gostR3411_1994HashMech = { CKM_GOSTR3411, NULL_PTR, 0 };
 
-/*  Механизм хэширования ГОСТ Р 34.11-2012(256) */
+/* Механизм хэширования ГОСТ Р 34.11-2012(256) */
 static CK_MECHANISM gostR3411_2012_256HashMech = { CKM_GOSTR3411_12_256, NULL_PTR, 0 };
 
-/*  Механизм хэширования ГОСТ Р 34.11-2012(512) */
+/* Механизм хэширования ГОСТ Р 34.11-2012(512) */
 static CK_MECHANISM gostR3411_2012_512HashMech = { CKM_GOSTR3411_12_512, NULL_PTR, 0 };
 
 /* Механизм для маскирования/демаскирования ключа */
-static CK_MECHANISM gost28147WrapMech = {CKM_GOST28147_KEY_WRAP, NULL_PTR, 0};
+static CK_MECHANISM gost28147WrapMech = { CKM_GOST28147_KEY_WRAP, NULL_PTR, 0 };
 
 /* Механизм выработки ключа обмена по алгоритму VKO GOST R 34.10-2001 */
-static CK_MECHANISM gostR3410_2001DerivationMech = {CKM_GOSTR3410_DERIVE, NULL_PTR, 0};
+static CK_MECHANISM gostR3410_2001DerivationMech = { CKM_GOSTR3410_DERIVE, NULL_PTR, 0 };
 
 /* Механизм выработки ключа обмена по алгоритму VKO GOST R 34.10-2012 */
-static CK_MECHANISM gostR3410_12DerivationMech  = { CKM_GOSTR3410_12_DERIVE, NULL_PTR, 0 };
+static CK_MECHANISM gostR3410_12DerivationMech = { CKM_GOSTR3410_12_DERIVE, NULL_PTR, 0 };
+
+/* Механизм выработки ключа обмена по алгоритму KEG для TLS 1.2 */
+static CK_MECHANISM gostKegDerivationMech = { CKM_GOST_KEG, NULL_PTR, 0 };
 
 /* Параметры для выработки ключа обмена */
-static CK_GOSTR3410_DERIVE_PARAMS deriveParameters = {CKD_CPDIVERSIFY_KDF, NULL_PTR, 0, NULL_PTR, 0};
+static CK_GOSTR3410_DERIVE_PARAMS deriveParameters = { CKD_CPDIVERSIFY_KDF, NULL_PTR, 0, NULL_PTR, 0 };
 
 /*************************************************************************
 * Механизмы PKCS#11 с программной реализацией                            *
@@ -428,23 +444,64 @@ static CK_GOSTR3410_DERIVE_PARAMS deriveParameters = {CKD_CPDIVERSIFY_KDF, NULL_
 * положительно повлиять на скорость выполнения операции, но отрицательно *
 * на обеспечение безопасности                                            *
 *************************************************************************/
-/*  Механизм программного хэширования ГОСТ Р 34.11-94
-static CK_MECHANISM gostR3411_1994HashMech = {CKM_GOSTR3411, parametersGostR3411_1994, sizeof(parametersGostR3411_1994)}; */
+/* Механизм программного хэширования ГОСТ Р 34.11-94
+   static CK_MECHANISM gostR3411_1994HashMech = { CKM_GOSTR3411, parametersGostR3411_1994, sizeof(parametersGostR3411_1994) }; */
 
-/*  Механизм программного хэширования ГОСТ Р 34.11-2012(256)
-static CK_MECHANISM gostR3411_2012_256HashMech = { CKM_GOSTR3411_12_256, parametersGostR3411_2012_256, sizeof(parametersGostR3411_2012_256)}; */
+/* Механизм программного хэширования ГОСТ Р 34.11-2012(256)
+   static CK_MECHANISM gostR3411_2012_256HashMech = { CKM_GOSTR3411_12_256, parametersGostR3411_2012_256, sizeof(parametersGostR3411_2012_256) }; */
 
-/*  Механизм программного хэширования ГОСТ Р 34.11-2012(512)
-static CK_MECHANISM gostR3411_2012_512HashMech = { CKM_GOSTR3411_12_512, parametersGostR3411_2012_512, sizeof(parametersGostR3411_2012_512)}; */
+/* Механизм программного хэширования ГОСТ Р 34.11-2012(512)
+   static CK_MECHANISM gostR3411_2012_512HashMech = { CKM_GOSTR3411_12_512, parametersGostR3411_2012_512, sizeof(parametersGostR3411_2012_512) }; */
 
-/*  Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2001 со встроенным программным хэшированием по алгоритму ГОСТ Р 34.11-94
-static CK_MECHANISM gostR3410_2001SigVerMech_WithHash = {CKM_GOSTR3410_WITH_GOSTR3411, parametersGostR3411_1994, sizeof(parametersGostR3411_1994)}; */
+/* Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2001 со встроенным программным хэшированием по алгоритму ГОСТ Р 34.11-94
+   static CK_MECHANISM gostR3410_2001SigVerMech_WithHash = { CKM_GOSTR3410_WITH_GOSTR3411, parametersGostR3411_1994, sizeof(parametersGostR3411_1994) }; */
 
-/*  Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2012(256) со встроенным программным хэшированием по алгоритму ГОСТ Р 34.11-2012(256)
-static CK_MECHANISM gostR3410_2012_256SigVerMech_WithHash = {CKM_GOSTR3410_WITH_GOSTR3411_12_256, parametersGostR3411_2012_256, sizeof(parametersGostR3411_2012_256)}; */
+/* Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2012(256) со встроенным программным хэшированием по алгоритму ГОСТ Р 34.11-2012(256)
+   static CK_MECHANISM gostR3410_2012_256SigVerMech_WithHash = { CKM_GOSTR3410_WITH_GOSTR3411_12_256, parametersGostR3411_2012_256, sizeof(parametersGostR3411_2012_256) }; */
 
-/*  Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2012(512) со встроенным программным хэшированием по алгоритму ГОСТ Р 34.11-2012(512)
-static CK_MECHANISM gostR3410_2012_512SigVerMech_WithHash = {CKM_GOSTR3410_WITH_GOSTR3411_12_512, parametersGostR3411_2012_512, sizeof(parametersGostR3411_2012_512)}; */
+/* Механизм подписи/проверки подписи по алгоритму ГОСТ Р 34.10-2012(512) со встроенным программным хэшированием по алгоритму ГОСТ Р 34.11-2012(512)
+   static CK_MECHANISM gostR3410_2012_512SigVerMech_WithHash = { CKM_GOSTR3410_WITH_GOSTR3411_12_512, parametersGostR3411_2012_512, sizeof(parametersGostR3411_2012_512) }; */
+
+/*************************************************************************
+* Запрос на получение сертификата                                        *
+*************************************************************************/
+/*************************************************************************
+* Список полей DN (Distinguished Name)                                   *
+*************************************************************************/
+CK_CHAR_PTR dn[] = { (CK_CHAR_PTR)"CN",                       // Тип поля CN (Common Name)
+	                 (CK_CHAR_PTR)"UTF8String:Иванов",        // Значение
+	                 (CK_CHAR_PTR)"C",                        // C (Country)
+	                 (CK_CHAR_PTR)"RU",
+	                 (CK_CHAR_PTR)"2.5.4.5",                  // SN (Serial Number)
+	                 (CK_CHAR_PTR)"12312312312",
+	                 (CK_CHAR_PTR)"1.2.840.113549.1.9.1",     // E (E-mail)
+	                 (CK_CHAR_PTR)"ivanov@mail.ru",
+	                 (CK_CHAR_PTR)"ST",                       // ST (State or province)
+	                 (CK_CHAR_PTR)"UTF8String:Москва",
+	                 (CK_CHAR_PTR)"O",                        // O (Organization)
+	                 (CK_CHAR_PTR)"CompanyName",
+	                 (CK_CHAR_PTR)"OU",                       // OU (Organizational Unit)
+	                 (CK_CHAR_PTR)"Devel",
+	                 (CK_CHAR_PTR)"L",                        // L (Locality)
+	                 (CK_CHAR_PTR)"Moscow", };
+
+/*************************************************************************
+* Список дополнительных полей                                            *
+*************************************************************************/
+CK_CHAR_PTR exts[] = {(CK_CHAR_PTR)"keyUsage",         // Использование ключа
+	                  (CK_CHAR_PTR)"digitalSignature,nonRepudiation,keyEncipherment,dataEncipherment",
+	                  (CK_CHAR_PTR)"extendedKeyUsage", // Дополнительное использование
+	                  (CK_CHAR_PTR)"1.2.643.2.2.34.6,1.3.6.1.5.5.7.3.2,1.3.6.1.5.5.7.3.4",
+	                  (CK_CHAR_PTR)"2.5.29.14",        // Идентификатор ключа субъекта (SKI)
+	                  (CK_CHAR_PTR)"hash",             // Если задать значение hash - идентификатор ключа субъекта будет сформирован библиотекой автоматически
+	                                                   // Также идентификатор ключа субъекта можно задать вручную
+	                                                   // (CK_CHAR_PTR)"ASN1:FORMAT:HEX,OCTETSTRING:FE117B93CEC6B5065E1613E155D3A9CA597C0F81",
+	                  (CK_CHAR_PTR)"2.5.29.17",        // Дополнительное имя (пример с кодированием в виде DER)
+	                  (CK_CHAR_PTR)"DER:30:0F:81:0D:65:78:61:6d:70:6c:65:40:79:61:2E:72:75",
+	                  (CK_CHAR_PTR)"2.5.29.32",        // Политики сертификата (кодирование в виде DER с пометкой "critical")
+	                  (CK_CHAR_PTR)"critical,DER:30:0A:30:08:06:06:2A:85:03:64:71:01",
+	                  (CK_CHAR_PTR)"1.2.643.100.111",  // Средства электронной подписи владельца
+	                  (CK_CHAR_PTR)"ASN1:UTF8String:СКЗИ \\\"Рутокен ЭЦП 2.0\\\"", };
 
 /*************************************************************************
 * Функция преобразования ошибки PKCS11 к строке                          *
@@ -549,10 +606,19 @@ static const char* rvToStr(CK_RV rv)
 	default: return "Unknown error";
 	}
 }
+
 /*************************************************************************
 * Макросы проверки ошибки. Если произошла ошибка, то выводится           *
 * сообщение и осуществляется переход на заданную метку                   *
 *************************************************************************/
+#define CHECK_AND_LOG_ONLY_ERROR(expression, errMsg, label) \
+	do { \
+		if (!(expression)) { \
+			printf(" -> Failed\n%s\n", errMsg); \
+			goto label; \
+		} \
+	} while (0)
+
 #define CHECK_AND_LOG(msg, expression, errMsg, label) \
 	do { \
 		printf("%s", msg); \
@@ -566,19 +632,10 @@ static const char* rvToStr(CK_RV rv)
 	} while (0)
 
 #define CHECK(msg, expression, label) \
-	do { \
-		printf("%s", msg); \
-		if (!(expression)) { \
-			printf(" -> Failed\n"); \
-			goto label; \
-		} \
-		else { \
-			printf(" -> OK\n"); \
-		} \
-	} while (0)
+	CHECK_AND_LOG(msg, expression, "", label)
 
 /*************************************************************************
-* Макросы проверки ошибки при освобождении ресурсов . Если произошла     *
+* Макросы проверки ошибки при освобождении ресурсов. Если произошла      *
 * ошибка, то выводится сообщение и выставляется                          *
 * значение переменной errorCode                                          *
 *************************************************************************/
@@ -595,14 +652,32 @@ static const char* rvToStr(CK_RV rv)
 	} while (0)
 
 #define CHECK_RELEASE(msg, expression, errorCode) \
+	CHECK_RELEASE_AND_LOG(msg, expression, "", errorCode)
+
+/*************************************************************************
+* Макросы проверки ошибки. Если произошла ошибка, то выводится           *
+* сообщение и выполняется оператор проверочного утверждения              *
+*************************************************************************/
+#define ASSERT_AND_LOG_AND_ERRMSG(msg, expression, errMsg) \
 	do { \
 		printf("%s", msg); \
 		if (!(expression)) { \
-			printf(" -> Failed\n"); \
-			errorCode = 1; \
+			printf("%s -> Failed\n%s\n", msg, errMsg); \
+			abort(); \
 		} \
 		else { \
 			printf(" -> OK\n"); \
+		} \
+	} while (0)
+
+#define ASSERT_AND_LOG(msg, expression) \
+	ASSERT_AND_LOG_AND_ERRMSG(msg, expression, "")
+
+#define ASSERT(msg, expression) \
+	do { \
+		if (!(expression)) { \
+			printf("%s -> Failed\n", msg); \
+			abort(); \
 		} \
 	} while (0)
 
@@ -683,23 +758,44 @@ exit:
 /*************************************************************************
 * Функция вывода шестнадцатеричного буфера заданной длины                *
 *************************************************************************/
-static void printHex(const CK_BYTE* buffer,   // Буфер
-                     const CK_ULONG length    // Длина буфера
-                     )
+static void printHexBuffer(const CK_BYTE* buffer,         // Буфер
+                           const CK_ULONG length,         // Длина буфера
+                           const CK_ULONG width,          // Байт в строке
+                           const CK_BYTE offset,          // Смещение каждой строки
+                           const CK_BYTE firstLineOffset  // Смещение первой строки
+                           )
 {
-	unsigned int i;
-	const unsigned int width = 16;
-	for (i = 0; i < length; ++i) {
-		if (i % width == 0) {
-			printf("   ");
+	unsigned int lineOffset = firstLineOffset;
+	for (unsigned int i = 0; i < length; ++i) {
+		if (width != 0) {
+			if (i % width == 0) {
+				for (unsigned int j = 0; j < lineOffset; ++j) {
+					printf(" ");
+				}
+			}
 		}
 
 		printf("%02X ", buffer[i]);
 
-		if ((i + 1) % width == 0 || (i + 1) == length) {
+		if (width != 0) {
+			if ((i + 1) % width == 0 || (i + 1) == length) {
+				printf("\n");
+			}
+		} else if ((i + 1) == length) {
 			printf("\n");
 		}
+		lineOffset = offset;
 	}
+}
+
+/*************************************************************************
+* Функция вывода шестнадцатеричного буфера по 16 байт в строке           *
+*************************************************************************/
+static void printHex(const CK_BYTE* buffer,   // Буфер
+                     const CK_ULONG length    // Длина буфера
+                     )
+{
+	printHexBuffer(buffer, length, 16, 3, 3);
 }
 
 /*************************************************************************
@@ -712,52 +808,42 @@ static int printUTF8String(CK_BYTE* info)
 	CK_ULONG sym = 0;
 	UINT cp = GetConsoleOutputCP();
 	BOOL set = SetConsoleOutputCP(866); //кодировка cp-866
-	if (set == FALSE)
+	if (set == FALSE) {
 		return 1;
+	}
 	while (*info) {
 		if (*info < 0x80) {
 			printf("%c", *info);                         //вывод однобайтовых символов
 			++info;
-		}
-		else if (*info & 0xC0) {                       //вывод двухбайтовых символов
+		} else if (*info & 0xC0) {                       //вывод двухбайтовых символов
 			sym = ((*info & 0x1F) << 6) + (*(info + 1) & 0x3F);
 			if (sym >= 0x0410 && sym <= 0x042F) {        //прописные
 				printf("%c", sym - 0x0410 + 0x80);
-			}
-			else if (sym >= 0x0430 && sym <= 0x043F) { //строчные до 'р'
+			} else if (sym >= 0x0430 && sym <= 0x043F) { //строчные до 'р'
 				printf("%c", sym - 0x0430 + 0xA0);
-			}
-			else if (sym >= 0x0440 && sym <= 0x044F) { //строчные после 'р'
+			} else if (sym >= 0x0440 && sym <= 0x044F) { //строчные после 'р'
 				printf("%c", sym - 0x0440 + 0xE0);
-			}
-			else if (sym == 0x0401) {                  //Ё
+			} else if (sym == 0x0401) {                  //Ё
 				printf("%c", 0xF0);
-			}
-			else if (sym == 0x0451) {                  //ё
+			} else if (sym == 0x0451) {                  //ё
 				printf("%c", 0xF1);
-			}
-			else {
+			} else {
 				printf("?");                                 //все остальные двухбайтные символы
 			}
 			info += 2;
-		}
-		else if (*info & 0xE0) {        //трёх- и более байтные символы
+		} else if (*info & 0xE0) {      //трёх- и более байтные символы
 			info += 3;
 			printf("?");
-		}
-		else if (*info & 0xF0) {
+		} else if (*info & 0xF0) {
 			info += 4;
 			printf("?");
-		}
-		else if (*info & 0xF8) {
+		} else if (*info & 0xF8) {
 			info += 5;
 			printf("?");
-		}
-		else if (*info & 0xFC) {
+		} else if (*info & 0xFC) {
 			info += 6;
 			printf("?");
-		}
-		else {
+		} else {
 			++info;
 		}
 	}
@@ -840,26 +926,22 @@ static void GetBytesAsPem(CK_BYTE_PTR source,                  // Исходны
 		return;
 	}
 	length = strlen(buffer);
-	*result = (char*)calloc(strlen(header) // Место под начальный тег
-		+ length                           // Место под base64 строку
-		+ strlen(footer)                   // Место под конечный тег
-		+ (length - 1) / width + 1         // Место под переносы строки
-		+ 1,                               // Нуль-байт
-		sizeof(char));
+	*result = (char*)calloc(strlen(header)             // Место под начальный тег
+	                        + length                   // Место под base64 строку
+	                        + strlen(footer)           // Место под конечный тег
+	                        + (length - 1) / width + 1 // Место под переносы строки
+	                        + 1,                       // Нуль-байт
+	                        sizeof(char));
 	if (*result == NULL) {
 		free(buffer);
 		return;
 	}
 	//компоновка данных
-	#pragma warning(suppress : 4996) // отключаем warning - deprecate
 	strcat(*result, header);
 	for (i = 0; i < length; i += width) {
-		#pragma warning(suppress : 4996) // отключаем warning - deprecate
 		strncat(*result, buffer + i, width);
-		#pragma warning(suppress : 4996) // отключаем warning - deprecate
 		strcat(*result, "\n");
 	}
-	#pragma warning(suppress : 4996) // отключаем warning - deprecate
 	strcat(*result, footer);
 
 	free(buffer);
@@ -875,7 +957,7 @@ static void GetCSRAsPEM(CK_BYTE_PTR source,                  // Исходные
 {
 	const char* begin = "-----BEGIN NEW CERTIFICATE REQUEST-----\n"; // Начало запроса
 	const char* end = "-----END NEW CERTIFICATE REQUEST-----\n";     // Конец запроса
-	
+
 	GetBytesAsPem(source, size, begin, end, result);
 }
 
@@ -889,7 +971,7 @@ static void GetCertAsPem(CK_BYTE_PTR source,    // Исходные данные
 {
 	const char* begin = "-----BEGIN CERTIFICATE-----\n"; // Начало сертификата
 	const char* end = "-----END CERTIFICATE-----\n";     // Конец сертификата
-	
+
 	GetBytesAsPem(source, size, begin, end, result);
 }
 

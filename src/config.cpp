@@ -45,6 +45,15 @@ int writeConfigCountUTM(std::string countUTM)
 	return 0;
 }
 
+int writeConfigAutoStart(std::string autostart)
+{
+	if (WritePrivateProfileString("options", "autostart", autostart.c_str(), (pathExe + "config.ini").c_str()) == 0)
+	{
+		return 1;
+	}
+	return 0;
+}
+
 // чтение из конфига
 int readConfigNameAndReader(int countUTM, std::vector<std::string>& nameReader,
 	std::vector<std::string>& attrReader,
@@ -97,6 +106,20 @@ int readConfigCountUTM(std::string& count)
 		return 1;
 	}
 	count = std::string(set);
+
+	return 0;
+}
+
+int readConfigAutoStart(std::string& autostart)
+{
+	CHAR set[MAX_PATH];
+	int err = 0;
+	err = GetPrivateProfileString("options", "autostart", 0, set, MAX_PATH, (pathExe + "config.ini").c_str());
+	if (err == 0 || err == -2)
+	{
+		return 1;
+	}
+	autostart = std::string(set);
 
 	return 0;
 }

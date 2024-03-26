@@ -1,3 +1,9 @@
+/*************************************************************************
+* Rutoken                                                                *
+* Copyright (c) 2003-2021, Aktiv-Soft JSC. All rights reserved.          *
+* Подробная информация:  http://www.rutoken.ru                           *
+*************************************************************************/
+
 #pragma once
 
 #include <fstream>
@@ -7,7 +13,7 @@
 #include <stdexcept>
 #include <iomanip>
 
-#include "pki-core-cpp.h"
+#include <pki-core-cpp.h>
 
 #define DO_STRING_JOIN(arg1, arg2) arg1 ## arg2
 #define STRING_JOIN(arg1, arg2) DO_STRING_JOIN(arg1, arg2)
@@ -37,8 +43,8 @@ private:
 	std::function<void()> mAction;
 };
 
-//template<typename T, size_t n>
-//size_t arraysize(T (&)[n]) { return n; }
+template<typename T, size_t n>
+size_t arraysize(T (&)[n]) { return n; }
 
 static std::string toHex(const std::vector<uint8_t>& data) {
 	std::ostringstream ss;
