@@ -182,7 +182,7 @@ void installUTM(HWND dlg, int countUTM, std::string fileUTM, SCARDCONTEXT ctx, s
 		SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, str.c_str());
 		logger(str, "INFO");
 		SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
-		err = checkHomePageUTM(ports[0], flagStartUTM, DEFAULT_TIMEOUT);
+		err = checkHomePageUTM(ports[0], flagStartUTM);
 		if (err == 2)
 		{
 			logger("Поток установки отменен пользователем", "INFO");
@@ -567,7 +567,7 @@ void installUTM(HWND dlg, int countUTM, std::string fileUTM, SCARDCONTEXT ctx, s
 			SetDlgItemText(dlg, IDC_STATIC_PROGRESSBAR2, str.c_str());
 			logger(str, "INFO");
 			SendMessage(GetDlgItem(dlg, IDC_PROGRESS1), PBM_STEPIT, 0, 0);
-			err = checkHomePageUTM(ports[i], flagStartUTM, DEFAULT_TIMEOUT);
+			err = checkHomePageUTM(ports[i], flagStartUTM);
 			if (err == 2)
 			{
 				logger("Поток установки отменен пользователем", "INFO");
