@@ -195,6 +195,24 @@ ERROR_DECLARATION(Pkcs11NextOtp, next_otp, 164, "pkcs11 next otp")
 ERROR_DECLARATION(Pkcs11NoEvent, no_event, 165, "pkcs11 no event")
 ERROR_DECLARATION(CantHardwareVerifyCMS, cant_hardware_verify_cms, 166, "Multitple signed CMS with hardware verification is not supported")
 ERROR_DECLARATION(DecryptUnsuccessful, decrypt_unsuccessful, 167, "Decrypt operation was unsuccessful")
+ERROR_DECLARATION(InappropriatePin, inappropriate_pin, 168, "pkcs11 inappropriate pin")
+ERROR_DECLARATION(PinInHistory, pin_in_history, 169, "pkcs11 pin in history")
+
+ERROR_DECLARATION(TsTokenMissed, ts_token_missed, 170, "timestamp token is missing")
+ERROR_DECLARATION(TsWrongContentType, ts_wrong_content_type, 171, "timestamp token has wrong content type")
+ERROR_DECLARATION(TsMustBeOneSigner, ts_must_be_one_signer, 172, "timestamp token can not be multiple signed")
+ERROR_DECLARATION(TsNoContent, ts_no_content, 173, "timestamp token can not be detached")
+ERROR_DECLARATION(TsEssSigningCertError, ts_ess_signing_cert_error, 174, "timestamp token hasn't ESSCertID of the TSA certificate")
+ERROR_DECLARATION(TsUnsupportedVersion, ts_unsupported_version, 175, "timestamp token's version is unsupported")
+ERROR_DECLARATION(TsPolicyMismatch, ts_policy_mismatch, 176, "timestamp token contains wrong policy")
+ERROR_DECLARATION(TsNonceNotReturned, ts_nonce_not_returned, 177, "timestamp token contains no nonce but it was requested")
+ERROR_DECLARATION(TsTsaUntrusted, ts_tsa_untrusted, 178, "timestamp token was created by untrusted TSA")
+
+ERROR_DECLARATION(X509V3InvalidObjectIdentifier, x509v3_invalid_object_identifier, 179, "invalid object identifier was specified")
+
+ERROR_DECLARATION(HostNotFound, host_not_found, 180, "Host not found")
+ERROR_DECLARATION(HttpError, http_error, 181, "Http status not 200 OK")
+ERROR_DECLARATION(TstVerificationError, tst_verification_error, 182, "Can't verify timestamp token")
 
 #undef ERROR_DECLARATION
 } rt_pc_error_code;
@@ -425,6 +443,7 @@ typedef enum
 	rt_pc_sign_flag_add_user_cert = 0x02,
 	rt_pc_sign_flag_add_sign_time = 0x04,
 	rt_pc_sign_flag_hardware_hash = 0x08,
+	rt_pc_sign_flag_add_ess_cert = 0x10,
 } rt_pc_sign_flag;
 
 typedef enum
@@ -456,7 +475,8 @@ typedef enum
 	rt_pc_x500_rdn_nid_ogrnip,
 	rt_pc_x500_rdn_nid_snils,
 	rt_pc_x500_rdn_nid_inn,
-	rt_pc_x500_rdn_nid_unstructured_name
+	rt_pc_x500_rdn_nid_unstructured_name,
+	rt_pc_x500_rdn_nid_innle,
 } rt_pc_x500_rdn_nid;
 
 typedef enum
@@ -1677,6 +1697,24 @@ ERROR_DECLARATION(Pkcs11NextOtp, next_otp, 164, "pkcs11 next otp")
 ERROR_DECLARATION(Pkcs11NoEvent, no_event, 165, "pkcs11 no event")
 ERROR_DECLARATION(CantHardwareVerifyCMS, cant_hardware_verify_cms, 166, "Multitple signed CMS with hardware verification is not supported")
 ERROR_DECLARATION(DecryptUnsuccessful, decrypt_unsuccessful, 167, "Decrypt operation was unsuccessful")
+ERROR_DECLARATION(InappropriatePin, inappropriate_pin, 168, "pkcs11 inappropriate pin")
+ERROR_DECLARATION(PinInHistory, pin_in_history, 169, "pkcs11 pin in history")
+
+ERROR_DECLARATION(TsTokenMissed, ts_token_missed, 170, "timestamp token is missing")
+ERROR_DECLARATION(TsWrongContentType, ts_wrong_content_type, 171, "timestamp token has wrong content type")
+ERROR_DECLARATION(TsMustBeOneSigner, ts_must_be_one_signer, 172, "timestamp token can not be multiple signed")
+ERROR_DECLARATION(TsNoContent, ts_no_content, 173, "timestamp token can not be detached")
+ERROR_DECLARATION(TsEssSigningCertError, ts_ess_signing_cert_error, 174, "timestamp token hasn't ESSCertID of the TSA certificate")
+ERROR_DECLARATION(TsUnsupportedVersion, ts_unsupported_version, 175, "timestamp token's version is unsupported")
+ERROR_DECLARATION(TsPolicyMismatch, ts_policy_mismatch, 176, "timestamp token contains wrong policy")
+ERROR_DECLARATION(TsNonceNotReturned, ts_nonce_not_returned, 177, "timestamp token contains no nonce but it was requested")
+ERROR_DECLARATION(TsTsaUntrusted, ts_tsa_untrusted, 178, "timestamp token was created by untrusted TSA")
+
+ERROR_DECLARATION(X509V3InvalidObjectIdentifier, x509v3_invalid_object_identifier, 179, "invalid object identifier was specified")
+
+ERROR_DECLARATION(HostNotFound, host_not_found, 180, "Host not found")
+ERROR_DECLARATION(HttpError, http_error, 181, "Http status not 200 OK")
+ERROR_DECLARATION(TstVerificationError, tst_verification_error, 182, "Can't verify timestamp token")
 
 
 #undef ERROR_DECLARATION
@@ -1874,6 +1912,24 @@ ERROR_DECLARATION(Pkcs11NextOtp, next_otp, 164, "pkcs11 next otp")
 ERROR_DECLARATION(Pkcs11NoEvent, no_event, 165, "pkcs11 no event")
 ERROR_DECLARATION(CantHardwareVerifyCMS, cant_hardware_verify_cms, 166, "Multitple signed CMS with hardware verification is not supported")
 ERROR_DECLARATION(DecryptUnsuccessful, decrypt_unsuccessful, 167, "Decrypt operation was unsuccessful")
+ERROR_DECLARATION(InappropriatePin, inappropriate_pin, 168, "pkcs11 inappropriate pin")
+ERROR_DECLARATION(PinInHistory, pin_in_history, 169, "pkcs11 pin in history")
+
+ERROR_DECLARATION(TsTokenMissed, ts_token_missed, 170, "timestamp token is missing")
+ERROR_DECLARATION(TsWrongContentType, ts_wrong_content_type, 171, "timestamp token has wrong content type")
+ERROR_DECLARATION(TsMustBeOneSigner, ts_must_be_one_signer, 172, "timestamp token can not be multiple signed")
+ERROR_DECLARATION(TsNoContent, ts_no_content, 173, "timestamp token can not be detached")
+ERROR_DECLARATION(TsEssSigningCertError, ts_ess_signing_cert_error, 174, "timestamp token hasn't ESSCertID of the TSA certificate")
+ERROR_DECLARATION(TsUnsupportedVersion, ts_unsupported_version, 175, "timestamp token's version is unsupported")
+ERROR_DECLARATION(TsPolicyMismatch, ts_policy_mismatch, 176, "timestamp token contains wrong policy")
+ERROR_DECLARATION(TsNonceNotReturned, ts_nonce_not_returned, 177, "timestamp token contains no nonce but it was requested")
+ERROR_DECLARATION(TsTsaUntrusted, ts_tsa_untrusted, 178, "timestamp token was created by untrusted TSA")
+
+ERROR_DECLARATION(X509V3InvalidObjectIdentifier, x509v3_invalid_object_identifier, 179, "invalid object identifier was specified")
+
+ERROR_DECLARATION(HostNotFound, host_not_found, 180, "Host not found")
+ERROR_DECLARATION(HttpError, http_error, 181, "Http status not 200 OK")
+ERROR_DECLARATION(TstVerificationError, tst_verification_error, 182, "Can't verify timestamp token")
 
 #undef ERROR_DECLARATION
 		default: throw internal::UnknownErrorCodeException(errorCode);
@@ -1996,6 +2052,7 @@ public:
 			snils = rt_pc_x500_rdn_nid_snils,                                ///< СНИЛС
 			inn = rt_pc_x500_rdn_nid_inn,                                    ///< ИНН
 			unstructuredName = rt_pc_x500_rdn_nid_unstructured_name,         ///< Неструктурированное имя
+			innle = rt_pc_x500_rdn_nid_innle,                                ///< ИНН юридического лица
 		};
 	};
 
@@ -2781,9 +2838,9 @@ public:
 		enum Type
 		{
 			plain = rt_pc_data_format_plain,         ///< Текст
-			raw = rt_pc_data_format_raw,             ///< Неформатированные данные
-			pinpad2 = rt_pc_data_format_pinpad2,     ///< Формат PINPad 2
-			xml = rt_pc_data_format_xml,             ///< xml
+			raw = rt_pc_data_format_raw,             ///< (DEPRECATED) Неформатированные данные
+			pinpad2 = rt_pc_data_format_pinpad2,     ///< (DEPRECATED) Формат PINPad 2
+			xml = rt_pc_data_format_xml,             ///< (DEPRECATED) xml
 			safetouch = rt_pc_data_format_safetouch, ///< Формат SafeTouch
 		};
 	};
@@ -2794,8 +2851,8 @@ public:
 		enum Type
 		{
 			journal = rt_pc_device_feature_journal,             ///< Наличие журнала выполненных операций подписи
-			pin2 = rt_pc_device_feature_pin2,                   ///< Наличие возможности запрашивать ввод дополнительнго PIN-кода на экране устройства
-			visualization = rt_pc_device_feature_visualization, ///< Наличие возможности отображать подписываемые данные на экране устройства
+			pin2 = rt_pc_device_feature_pin2,                   ///< (DEPRECATED) Наличие возможности запрашивать ввод дополнительнго PIN-кода на экране устройства
+			visualization = rt_pc_device_feature_visualization, ///< (DEPRECATED) Наличие возможности отображать подписываемые данные на экране устройства
 			sm = rt_pc_device_feature_sm,                       ///< Поддержка secure messaging
 			flash_drive = rt_pc_device_feature_flash_drive,     ///< Наличие flash-памяти в устройстве
 		};
@@ -2814,9 +2871,9 @@ public:
 		{
 			enum Type
 			{
-				/// Только для PINPad. Ключевая пара требует ввода PIN-кода "PIN2" для использования.
+				/// (DEPRECATED) Только для PINPad. Ключевая пара требует ввода PIN-кода "PIN2" для использования.
 				needPin2 = rt_pc_key_flag_need_pin2,
-				/// Только для PINPad. Ключевая пара требует визуализации данных при подписи.
+				/// (DEPRECATED) Только для PINPad. Ключевая пара требует визуализации данных при подписи.
 				needVisualization = rt_pc_key_flag_need_visualization,
 			};
 		};
@@ -3210,6 +3267,7 @@ public:
 		{
 			addUserCert = rt_pc_sign_flag_add_user_cert,  ///< Добавлять пользовательский сертификат к подписи.
 			addSignTime = rt_pc_sign_flag_add_sign_time,  ///< Добавлять метку времени к подписи.
+			addEssCert = rt_pc_sign_flag_add_ess_cert,    ///< Добавлять сертификат в формате ESS.
 			hardwareHash = rt_pc_sign_flag_hardware_hash, ///< Вычислять хеш на устройстве.
 		};
 	};
