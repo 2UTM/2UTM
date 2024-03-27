@@ -2544,6 +2544,7 @@ int startUTM()
 
     // Сбор данных
     workCollectDevice();
+    checkServiceUTM();
 
     // Скрываем прогрессбар и разблокируем главное окно
     ShowWindow(hProgressBar, SW_HIDE);
@@ -2656,6 +2657,8 @@ int stopUTM()
             return 1;
         }
     }
+
+    checkServiceUTM();
 
     // Скрываем прогрессбар и разблокируем главное окно
     ShowWindow(hProgressBar, SW_HIDE);
