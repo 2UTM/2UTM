@@ -15,6 +15,7 @@ int readConfigNameAndReader(int countUTM, std::vector<std::string>& nameReader,
 	std::vector<std::string>& serialNumber);
 int readConfigCountUTM(std::string& count);
 int readConfigAutoStart(std::string& autostart);
+int readConfigPorts(int countUTM, std::vector<std::string>& ports);
 
 // проверка на существование файла конфига
 bool configExists();

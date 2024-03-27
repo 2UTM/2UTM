@@ -124,6 +124,25 @@ int readConfigAutoStart(std::string& autostart)
 	return 0;
 }
 
+int readConfigPorts(int countUTM, std::vector<std::string>& ports)
+{
+	CHAR set[MAX_PATH];
+	int err = 0;
+	std::string numberUTM = "UTM_";
+
+	for (int i = countUTM; i > 0; --i)
+	{
+		err = GetPrivateProfileString((numberUTM + std::to_string(i)).c_str(), "port", 0, set, MAX_PATH, (pathExe + "config.ini").c_str());
+		if (err == 0 || err == -2)
+		{
+			return 1;
+		}
+		ports.push_back(std::string(set));
+	}
+
+	return 0;
+}
+
 // проверка на существование файла конфига
 bool configExists()
 {

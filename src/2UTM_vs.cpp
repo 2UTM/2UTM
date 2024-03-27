@@ -94,15 +94,18 @@ NOTIFYICONDATA pnid; // структура для трея
 bool flagShowMessageTray = false; // для сообщения в трее
 bool flagServiceRun = false; // флаг - запущен ли из под службы или нет
 bool flagAutostartUTM = false; // флаг - идет автозапуск утм или нет
+bool flagCheckServices = false; // флаг, что идет получение статусов служб
 std::map<DWORD, DWORD> mapSessionIDProcessID; // для контроля входа выхода пользователей и для завершения процессов
 UINT WM_TASKBARCREATED; // для пользовательского сообщения о создании панели задач от explorer.exe
 UINT_PTR checkServiceTimer = 0; // таймер для сбора инфы о службах
 std::vector<std::string> vecPathService; // для путей до исполняющих файлов служб
+std::vector<int> vecUTMError; // для ошибок УТМ при проверке поля rsaError , 0 - не запущен, 1 - ошибок нет, 2 - ошибки есть
 
 // Иконки для листвью
 HICON hIconToken = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON6));
 HICON hIconServiceRun = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON4));
 HICON hIconServiceStop = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON5));
+HICON hIconServiceWarning = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON1));
 
 // Хендлы виджетов
 HWND hWndMain, hListBoxTokensGlobal, hEditInfoTokens, hStatusBar, hProgressBar, hDlgReadersNoContext, hDlgInstallUTM, hTabControl, hListBoxUTMServiceGlobal;
@@ -437,10 +440,11 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     }
 
     // Иконки для листвью
-    HIMAGELIST hSmall = ImageList_Create(16, 16, ILC_COLOR32, 3, 0);
+    HIMAGELIST hSmall = ImageList_Create(16, 16, ILC_COLOR32, 4, 0);
     ImageList_AddIcon(hSmall, hIconToken);
     ImageList_AddIcon(hSmall, hIconServiceRun);
     ImageList_AddIcon(hSmall, hIconServiceStop);
+    ImageList_AddIcon(hSmall, hIconServiceWarning);
     ListView_SetImageList(hListBoxTokensGlobal, hSmall, LVSIL_SMALL);
     ListView_SetImageList(hListBoxUTMServiceGlobal, hSmall, LVSIL_SMALL);
 
@@ -855,6 +859,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     break;
                 }
 
+                case ID_REREAD_SERVICES: // перечитать службы УТМ
+                {
+                    if (flagCheckServices == true) // если проверка уже идет прерываем
+                    {
+                        break;
+                    }
+
+                    flagCheckServices = true;
+
+                    // Открываем прогрессбар и блокируем главное окно
+                    ShowWindow(hProgressBar, SW_SHOW);
+                    SendMessage(hProgressBar, (UINT)PBM_SETMARQUEE, (WPARAM)1, NULL);
+                    EnableWindow(hWnd, FALSE);
+
+                    // Перечитываем службы УТМ
+                    std::thread thr(&checkServiceUTM);
+                    thr.detach();
+
+                    break;
+                }
+
                 case ID_REREAD_DEVICES: // перечитать устройства
                 {
                     if (flagAutostartUTM)
@@ -871,7 +896,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     // Сбор данных
                     indexToken = -1;
                     setStatusBar("Выполняется обновление устройств...");
-                    workCollectDevice();
+                    std::thread thr(&workCollectDevice);
+                    thr.detach();
                     SetWindowTextA(hEditInfoTokens, ""); // очищаем поле информации
                     break;
                 }
@@ -3165,6 +3191,14 @@ int checkServiceUTM()
         }
     }
 
+    // получаем порты УТМ из конфига
+    std::vector<std::string> ports;
+    if (readConfigPorts(intCountUTM, ports) == 1)
+    {
+        logger("Ошибка чтения конфига при проверке наличия служб УТМ - " + std::to_string(GetLastError()), "ERROR");
+        return 1;
+    }
+
     // проверка наличие служб УТМ и их статус
     std::vector<std::string> vecServiceStatus;
     if (getServiceList(vecUTMService, vecServiceStatus) == 1)
@@ -3173,8 +3207,33 @@ int checkServiceUTM()
         return 1;
     }
 
+    // проверка ошибок УТМ
+    // 0 - не запущен, 1 - ошибок нет, 2 - ошибки есть
+    std::vector<int> vecUTMError;
+    int UTMError = 0;
+    int countPort = ports.size() - 1; // потому что массив портов развернут в другую сторону
+    for (int i = 0; i < vecServiceStatus.size(); ++i)
+    {
+        if (vecServiceStatus[i].find("Запущена") != std::string::npos)
+        {
+            if (checkUTMError(UTMError, ports[countPort]) != 0)
+            {
+                logger("Ошибка проверки ошибок УТМ при проверке наличия служб УТМ - " + std::to_string(GetLastError()), "ERROR");
+                return 1;
+            }
+            vecUTMError.push_back(UTMError);
+        }
+        else
+        {
+            UTMError = 0;
+            vecUTMError.push_back(UTMError);
+        }
+        --countPort;
+    }
+
+
     // заполняем листбокс утм и службы
-    if (fillListBoxUTMService(vecServiceStatus) == 1)
+    if (fillListBoxUTMService(vecServiceStatus, vecUTMError) == 1)
     {
         logger("Ошибка заполнения листбокса при проверке наличия служб УТМ - вектор vecServiceStatus пуст", "ERROR");
         // Удаляем все строки в листвью контактов
@@ -3184,6 +3243,12 @@ int checkServiceUTM()
     }
 
     logger("Получение информации о службах УТМ успешно завершено", "INFO");
+
+    // Убираем прогрессбар и разблокируем главное окно
+    ShowWindow(hProgressBar, SW_HIDE);
+    EnableWindow(hWndMain, TRUE);
+
+    flagCheckServices = false;
 
     return 0;
 }
@@ -3292,7 +3357,7 @@ int getServiceList(std::vector<std::string> vecUTMService, std::vector<std::stri
 }
 
 // заполнение листбокса утм и службы
-int fillListBoxUTMService(std::vector<std::string> vecServiceStatus)
+int fillListBoxUTMService(std::vector<std::string> vecServiceStatus, std::vector<int> vecUTMError)
 {
     if (vecServiceStatus.empty())
     {
@@ -3305,16 +3370,26 @@ int fillListBoxUTMService(std::vector<std::string> vecServiceStatus)
     ListView_DeleteAllItems(hListBoxUTMServiceGlobal);
 
     // Заполняем
+    std::string str;
     for (int i = 0; i < vecServiceStatus.size(); ++i)
     {
-        std::string s = "      " + vecServiceStatus[i]; // пробелы для красоты
-        if (s.find("Запущена") != std::string::npos) // для подбора картинок
+        if (vecServiceStatus[i].find("Запущена") != std::string::npos) // для подбора картинок
         {
-            CreateItem(hListBoxUTMServiceGlobal, (CHAR*)s.c_str(), i, 1);
+            if (vecUTMError[i] == 1)
+            {
+                str = "      " + vecServiceStatus[i] + " - Ошибок нет"; // пробелы для красоты
+                CreateItem(hListBoxUTMServiceGlobal, (CHAR*)str.c_str(), i, 1);
+            }
+            else
+            {
+                str = "      " + vecServiceStatus[i] + " - Ошибка ключа"; // пробелы для красоты
+                CreateItem(hListBoxUTMServiceGlobal, (CHAR*)str.c_str(), i, 3);
+            }
         }
         else
         {
-            CreateItem(hListBoxUTMServiceGlobal, (CHAR*)s.c_str(), i, 2);
+            str = "      " + vecServiceStatus[i]; // пробелы для красоты
+            CreateItem(hListBoxUTMServiceGlobal, (CHAR*)str.c_str(), i, 2);
         }
     }
 

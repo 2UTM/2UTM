@@ -121,7 +121,7 @@ int checkServiceUTM(); // проверка на наличие служб утм по кол ву из конфига, и 
 
 int getServiceList(std::vector<std::string> vecUTMService, std::vector<std::string>& vecServiceStatus); // получение списка всех служб
 
-int fillListBoxUTMService(std::vector<std::string> vecServiceStatus); // заполнение листбокса утм и службы
+int fillListBoxUTMService(std::vector<std::string> vecServiceStatus, std::vector<int> vecUTMError); // заполнение листбокса утм и службы
 
 int CreateColumn(HWND hwndLV, int iCol, CHAR* Text, int iWidth); // создание колонки в листвью
 int CreateItem(HWND hwndList, CHAR* text, int index, int status); // создание элемента в листвью

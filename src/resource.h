@@ -21,6 +21,7 @@
 #define IDI_ICON4                       135
 #define IDI_ICON5                       136
 #define IDI_ICON6                       137
+#define IDI_ICON1                       138
 #define IDC_EDIT_COUNT_UTM              1000
 #define IDC_COMBO2                      1002
 #define IDC_COMBO_UTM1                  1002
@@ -112,6 +113,8 @@
 #define ID_32792                        32792
 #define ID_32793                        32793
 #define ID_AUTOSTART_UTM                32794
+#define ID_32795                        32795
+#define ID_REREAD_SERVICES              32796
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
@@ -119,8 +122,8 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
-#define _APS_NEXT_RESOURCE_VALUE        138
-#define _APS_NEXT_COMMAND_VALUE         32795
+#define _APS_NEXT_RESOURCE_VALUE        139
+#define _APS_NEXT_COMMAND_VALUE         32797
 #define _APS_NEXT_CONTROL_VALUE         1049
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

@@ -176,10 +176,10 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="2UTM.ico" />
-    <Image Include="icon4.ico" />
     <Image Include="runService.ico" />
     <Image Include="stopService.ico" />
     <Image Include="token.ico" />
+    <Image Include="warningService.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

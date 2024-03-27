@@ -96,7 +96,7 @@
     <Image Include="token.ico">
       <Filter>Файлы ресурсов</Filter>
     </Image>
-    <Image Include="icon4.ico">
+    <Image Include="warningService.ico">
       <Filter>Файлы ресурсов</Filter>
     </Image>
   </ItemGroup>
