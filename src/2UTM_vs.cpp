@@ -3336,7 +3336,7 @@ int getServiceList(std::vector<std::string> vecUTMService, std::vector<std::stri
                             }
                             else
                             {
-                                str += " - Не запущена";
+                                str += " - Остановлена";
                             }
                             vecServiceStatus.push_back(str);
                             break;
