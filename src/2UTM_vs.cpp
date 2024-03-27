@@ -561,8 +561,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             int err = readConfigAutoStart(autostart);
             if (err == 1)
             {
-                logger("Не удалось прочитать конфиг! Код ошибки - " + std::to_string(GetLastError()), "ERROR");
-                break;
+                logger("Не удалось прочитать конфиг! Нет поля autostart. Код ошибки - " + std::to_string(GetLastError()), "ERROR");
             }
             if (autostart == "true")
             {
