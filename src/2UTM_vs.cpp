@@ -91,6 +91,7 @@ int indexToken = -1;                             // индекс выделен�
 HANDLE handleThrInstallUTM;
 
 NOTIFYICONDATA pnid; // структура для трея
+HANDLE hMutex = CreateMutex(NULL, FALSE, NULL); // мьютекс для проверки служб утм, вроде не нужен
 bool flagShowMessageTray = false; // для сообщения в трее
 bool flagServiceRun = false; // флаг - запущен ли из под службы или нет
 bool flagAutostartUTM = false; // флаг - идет автозапуск утм или нет
@@ -603,6 +604,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     thr.detach();
 
                     flagAutostartUTM = true;
+                    flagStartUTM = true;
                 }
             }
             else
@@ -3190,6 +3192,20 @@ int showOrHideOption(int tab)
 // проверка на наличие служб утм по кол ву из конфига, и запрос на главную страницу
 int checkServiceUTM()
 {
+    DWORD waitMutex = WaitForSingleObject(hMutex, 1000);
+    if (waitMutex == WAIT_TIMEOUT)
+    {
+        setStatusBar("Мьютекс не освобожден, проверка служб УТМ прервана");
+        logger("Мьютекс не освобожден, проверка служб УТМ прервана", "INFO");
+        if (flagAutostartUTM == false && flagStartUTM == false && flagStopUTM == false) // при запуске и остановке утмов прогрессбар не убирать
+        {
+            // Убираем прогрессбар и разблокируем главное окно
+            ShowWindow(hProgressBar, SW_HIDE);
+            EnableWindow(hWndMain, TRUE);
+        }
+        return 0;
+    }
+
     logger("Получение информации о службах УТМ", "INFO");
 
     // получаем кол во утм из конфига
@@ -3274,6 +3290,7 @@ int checkServiceUTM()
     }
 
     flagCheckServices = false;
+    ReleaseMutex(hMutex);
 
     return 0;
 }
