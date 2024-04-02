@@ -94,6 +94,8 @@ NOTIFYICONDATA pnid; // структура для трея
 bool flagShowMessageTray = false; // для сообщения в трее
 bool flagServiceRun = false; // флаг - запущен ли из под службы или нет
 bool flagAutostartUTM = false; // флаг - идет автозапуск утм или нет
+bool flagStartUTM = false; // флаг - идет запуск утм
+bool flagStopUTM = false; // флаг - идет остановка утм
 bool flagCheckServices = false; // флаг, что идет получение статусов служб
 std::map<DWORD, DWORD> mapSessionIDProcessID; // для контроля входа выхода пользователей и для завершения процессов
 UINT WM_TASKBARCREATED; // для пользовательского сообщения о создании панели задач от explorer.exe
@@ -1001,6 +1003,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     EnableWindow(hWnd, FALSE);
 
                     // запускаем утмы
+                    flagStartUTM = true;
                     std::thread thr(&startUTM);
                     thr.detach();
 
@@ -1042,6 +1045,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     EnableWindow(hWnd, FALSE);
 
                     // запускаем утмы
+                    flagStopUTM = true;
                     std::thread thr(&stopUTM);
                     thr.detach();
 
@@ -2258,12 +2262,12 @@ int startUTM()
 
     std::string error;
     int err;
-    bool flagStartUTM = true;
 
     std::string countUTMstr;
     if (readConfigCountUTM(countUTMstr) == 1)
     {
         flagAutostartUTM = false;
+        flagStartUTM = false;
         error = "Чтение конфига завершилась ошибкой! Код ошибки - " + std::to_string(GetLastError());
         logger(error, "ERROR");
         MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2279,6 +2283,7 @@ int startUTM()
     if (readConfigNameAndReader(countUTM, vectorNameReaders, vectorAttrReaders, ports, serialNumbers) == 1)
     {
         flagAutostartUTM = false;
+        flagStartUTM = false;
         error = "Чтение конфига завершилась ошибкой! Код ошибки - " + std::to_string(GetLastError());
         logger(error, "ERROR");
         MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2292,6 +2297,7 @@ int startUTM()
     if (vecRutokens.size() < vectorNameReaders.size())
     {
         flagAutostartUTM = false;
+        flagStartUTM = false;
         error = "Активных токенов меньше, чем в конфиге.\nПереустановите УТМы, или добавьте активных токенов";
         logger(error, "ERROR");
         MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2319,6 +2325,7 @@ int startUTM()
     if (vecTempSerialNumber != serialNumbers)
     {
         flagAutostartUTM = false;
+        flagStartUTM = false;
         error = "Некоторые активные токены отсутсвуют в конфиге.\nПереустановите УТМы, или исправьте активные токены";
         logger(error, "ERROR");
         MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2337,6 +2344,7 @@ int startUTM()
         if (err != 0)
         {
             flagAutostartUTM = false;
+            flagStartUTM = false;
             error = "Ошибка запуска службы Trasport! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
             logger(error, "ERROR");
             MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2359,6 +2367,7 @@ int startUTM()
         if (err != 0)
         {
             flagAutostartUTM = false;
+            flagStartUTM = false;
             error = "Не удалось проверить работу УТМ! Код ошибки - " + std::to_string(err) + "\nФункция завершилась по таймауту" + "\nБудет выполнена отмена изменений";
             logger(error, "ERROR");
             MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2405,6 +2414,7 @@ int startUTM()
             if (err != 0)
             {
                 flagAutostartUTM = false;
+                flagStartUTM = false;
                 error = "Удаление всех ридеров завершилось ошибкой! Код ошибки - " + std::to_string(err) + "\nБудет выполнена отмена изменений";
                 logger(error, "ERROR");
                 MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2438,6 +2448,7 @@ int startUTM()
             if (err != 0)
             {
                 flagAutostartUTM = false;
+                flagStartUTM = false;
                 error = "Добавление ридера " + nameReader + " завершилось ошибкой! Код ошибки - " + std::to_string(err) + "\nБудет выполнена отмена изменений";
                 logger(error, "ERROR");
                 MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2466,6 +2477,7 @@ int startUTM()
             if (err != 0)
             {
                 flagAutostartUTM = false;
+                flagStartUTM = false;
                 error = "Добавление ридера " + nameReader + " завершилось ошибкой! Код ошибки - " + std::to_string(err) + "\nБудет выполнена отмена изменений";
                 logger(error, "ERROR");
                 MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2499,6 +2511,7 @@ int startUTM()
             if (err != 0)
             {
                 flagAutostartUTM = false;
+                flagStartUTM = false;
                 error = "Ошибка запуска службы Transport" + numberService + "! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
                 logger(error, "ERROR");
                 MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2522,6 +2535,7 @@ int startUTM()
             if (err != 0)
             {
                 flagAutostartUTM = false;
+                flagStartUTM = false;
                 error = "Не удалось проверить работу УТМ " + numberService + "! Код ошибки - " + std::to_string(err) + "\nФункция завершилась по таймауту" + "\nБудет выполнена отмена изменений";
                 logger(error, "ERROR");
                 MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2540,6 +2554,7 @@ int startUTM()
     }
 
     flagAutostartUTM = false;
+    flagStartUTM = false;
 
     // Сбор данных
     workCollectDevice();
@@ -2609,6 +2624,7 @@ int stopUTM()
     int err = readConfigCountUTM(countUTMstr);
     if (err != 0)
     {
+        flagStopUTM = false;
         error = "Не удалось получить кол-во УТМ из конфига, код ошибки " + std::to_string(err);
         setStatusBar(error);
         logger(error, "ERROR");
@@ -2629,6 +2645,7 @@ int stopUTM()
             err = stopServiceUTM("Transport");
             if (err != 0)
             {
+                flagStopUTM = false;
                 error = "Не удалось остановить службу Transport, код ошибки " + std::to_string(err);
                 setStatusBar(error);
                 MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2645,6 +2662,7 @@ int stopUTM()
         err = stopServiceUTM("Transport" + std::to_string(i));
         if (err != 0)
         {
+            flagStopUTM = false;
             error = "Не удалось остановить службу Transport" + std::to_string(i) + ", код ошибки " + std::to_string(err);
             setStatusBar(error);
             MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2656,6 +2674,8 @@ int stopUTM()
             return 1;
         }
     }
+
+    flagStopUTM = false;
 
     checkServiceUTM();
 
@@ -3246,9 +3266,12 @@ int checkServiceUTM()
 
     logger("Получение информации о службах УТМ успешно завершено", "INFO");
 
-    // Убираем прогрессбар и разблокируем главное окно
-    ShowWindow(hProgressBar, SW_HIDE);
-    EnableWindow(hWndMain, TRUE);
+    if (flagAutostartUTM == false && flagStartUTM == false && flagStopUTM == false) // при запуске и остановке утмов прогрессбар не убирать
+    {
+        // Убираем прогрессбар и разблокируем главное окно
+        ShowWindow(hProgressBar, SW_HIDE);
+        EnableWindow(hWndMain, TRUE);
+    }
 
     flagCheckServices = false;
 
