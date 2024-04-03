@@ -2274,6 +2274,11 @@ int startUTM()
         logger(error, "ERROR");
         MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
         setStatusBar(error);
+
+        // Сбор данных
+        workCollectDevice();
+        checkServiceUTM();
+
         // Скрываем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -2290,6 +2295,11 @@ int startUTM()
         logger(error, "ERROR");
         MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
         setStatusBar(error);
+
+        // Сбор данных
+        workCollectDevice();
+        checkServiceUTM();
+
         // Скрываем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -2304,6 +2314,11 @@ int startUTM()
         logger(error, "ERROR");
         MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
         setStatusBar(error);
+
+        // Сбор данных
+        workCollectDevice();
+        checkServiceUTM();
+
         // Скрываем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -2332,6 +2347,11 @@ int startUTM()
         logger(error, "ERROR");
         MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
         setStatusBar(error);
+
+        // Сбор данных
+        workCollectDevice();
+        checkServiceUTM();
+
         // Скрываем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -2355,6 +2375,11 @@ int startUTM()
             {
                 logger("Отмена изменений завершилась неудачей", "ERROR");
             }
+
+            // Сбор данных
+            workCollectDevice();
+            checkServiceUTM();
+
             // Скрываем прогрессбар и разблокируем главное окно
             ShowWindow(hProgressBar, SW_HIDE);
             EnableWindow(hWndMain, TRUE);
@@ -2378,6 +2403,11 @@ int startUTM()
             {
                 logger("Отмена изменений завершилась неудачей", "ERROR");
             }
+
+            // Сбор данных
+            workCollectDevice();
+            checkServiceUTM();
+
             // Скрываем прогрессбар и разблокируем главное окно
             ShowWindow(hProgressBar, SW_HIDE);
             EnableWindow(hWndMain, TRUE);
@@ -2425,6 +2455,11 @@ int startUTM()
                 {
                     logger("Отмена изменений завершилась неудачей", "ERROR");
                 }
+
+                // Сбор данных
+                workCollectDevice();
+                checkServiceUTM();
+
                 // Скрываем прогрессбар и разблокируем главное окно
                 ShowWindow(hProgressBar, SW_HIDE);
                 EnableWindow(hWndMain, TRUE);
@@ -2459,6 +2494,11 @@ int startUTM()
                 {
                     logger("Отмена изменений завершилась неудачей", "ERROR");
                 }
+
+                // Сбор данных
+                workCollectDevice();
+                checkServiceUTM();
+
                 // Скрываем прогрессбар и разблокируем главное окно
                 ShowWindow(hProgressBar, SW_HIDE);
                 EnableWindow(hWndMain, TRUE);
@@ -2488,6 +2528,11 @@ int startUTM()
                 {
                     logger("Отмена изменений завершилась неудачей", "ERROR");
                 }
+
+                // Сбор данных
+                workCollectDevice();
+                checkServiceUTM();
+
                 // Скрываем прогрессбар и разблокируем главное окно
                 ShowWindow(hProgressBar, SW_HIDE);
                 EnableWindow(hWndMain, TRUE);
@@ -2522,6 +2567,11 @@ int startUTM()
                 {
                     logger("Отмена изменений завершилась неудачей", "ERROR");
                 }
+
+                // Сбор данных
+                workCollectDevice();
+                checkServiceUTM();
+
                 // Скрываем прогрессбар и разблокируем главное окно
                 ShowWindow(hProgressBar, SW_HIDE);
                 EnableWindow(hWndMain, TRUE);
@@ -2546,6 +2596,11 @@ int startUTM()
                 {
                     logger("Отмена изменений завершилась неудачей", "ERROR");
                 }
+
+                // Сбор данных
+                workCollectDevice();
+                checkServiceUTM();
+
                 // Скрываем прогрессбар и разблокируем главное окно
                 ShowWindow(hProgressBar, SW_HIDE);
                 EnableWindow(hWndMain, TRUE);
