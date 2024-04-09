@@ -195,8 +195,8 @@ int deleteServiceUTM(int numberUTM)
     return 0;
 }
 
-// проверка работы УТМ (запрос на главную страницу УТМ через curl)
-int checkHomePageUTM(std::string port, bool flagStartUTM)
+// проверка работы УТМ (запрос на главную страницу УТМ)
+int checkHomePageUTM(std::string port, bool flagStartUTM, int timeout)
 {
     // если пользователь прервал, выходим
     if (flagStartUTM == false)
@@ -242,7 +242,7 @@ int checkHomePageUTM(std::string port, bool flagStartUTM)
     BOOL check;
     int count = 0;
     int err = 0;
-    while (count < 86)
+    while (count < timeout)
     {
         // если пользователь прервал, выходим
         if (flagStartUTM == false)
@@ -283,6 +283,58 @@ int checkHomePageUTM(std::string port, bool flagStartUTM)
     {
         return err;
     }
+    return 0;
+}
+
+// запрос у утм инфы через апи, смотрим поле rsaError
+int checkUTMError(int& error, std::string port)
+{
+    HINTERNET hSession, hConnect;
+
+    // инициализация
+    hSession = InternetOpen("HTTPGET", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, NULL);
+    if (hSession == NULL)
+    {
+        return GetLastError();
+    }
+
+    // открываем URL
+    std::string url = "http://localhost:" + port + "/api/info/list";
+    hConnect = InternetOpenUrl(hSession, url.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
+
+    if (hConnect == NULL)
+    {
+        InternetCloseHandle(hSession);
+        return GetLastError();
+    }
+
+    // читаем данные
+    DWORD bytesRead;
+    std::string data;
+    char buffer[MAX_PATH];
+    while (InternetReadFile(hConnect, buffer, sizeof(buffer), &bytesRead) && bytesRead > 0)
+    {
+        data.append(buffer, bytesRead);
+    }
+
+    // разбор json (ну типо разбор)))
+    int index = data.find("rsaError");
+    if (index != std::string::npos)
+    {
+        data = data.substr(index + 10, 4);
+        if (data == "null")
+        {
+            error = 1;
+        }
+        else
+        {
+            error = 2;
+        }
+    }
+
+    InternetCloseHandle(hSession);
+    InternetCloseHandle(hConnect);
+
     return 0;
 }
 

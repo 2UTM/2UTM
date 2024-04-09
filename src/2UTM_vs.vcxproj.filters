@@ -87,5 +87,17 @@
     <Image Include="2UTM.ico">
       <Filter>Файлы ресурсов</Filter>
     </Image>
+    <Image Include="runService.ico">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
+    <Image Include="stopService.ico">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
+    <Image Include="token.ico">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
+    <Image Include="warningService.ico">
+      <Filter>Файлы ресурсов</Filter>
+    </Image>
   </ItemGroup>
 </Project>

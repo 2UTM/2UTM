@@ -7,6 +7,7 @@
 
 #define MAX_LOADSTRING 100
 #define TRAY_ICON WM_USER + 1
+#define TIMER_CHECK_SERVICE WM_USER + 2
 
 ///////////////////////////////////////////////////////////////////////////////////////
 // Создание дампа в случае аварийного завершения
@@ -67,14 +68,11 @@ std::string about =
 "Программа не контролирует работу УТМ, она создает условия, чтобы несколько УТМ смогли работать.\n"
 "Ограничение в 10 УТМ, потому что в ОС Windows, начиная с Windows 8, одновременно может быть только 10 ридеров для смарт карт.\n"
 "\n"
-"Что нового в версии 1.3:\n"
-"1. Добавлена служба 2UTM_service, с помощью нее реализован автозапуск УТМов при запуске компьютера.\n"
-"2. Исправлено UB при запуске УТМов, была гонка за ресурс.\n"
-"3. Исправлена небольшая ошибка с выделением токена в листбоксе.\n"
-"4. Исправлена небольшая ошибка с логом.\n"
-"\n"
-"\n"
-"\n"
+"Что нового в версии 1.4:\n"
+"1. Добавлена вкладка службы УТМ со статусами служб УТМ, обновление статусов раз в минуту.\n"
+"2. Переделан ListBox на ListView.\n"
+"3. Добавлены иконки для красоты.\n"
+"4. Исправлены небольшие ошибки.\n"
 "\n"
 "\n"
 "Разработчик: Королев Сергей.\n"
@@ -91,15 +89,29 @@ DWORD dwMinorVersionOS;                         // версия ос
 int countUTM = 0;                               // кол во УТМ
 int indexToken = -1;                             // индекс выделенного токена, чтобы не выделять одно и тоже
 HANDLE handleThrInstallUTM;
+
 NOTIFYICONDATA pnid; // структура для трея
+HANDLE hMutex = CreateMutex(NULL, FALSE, NULL); // мьютекс для проверки служб утм, вроде не нужен
 bool flagShowMessageTray = false; // для сообщения в трее
 bool flagServiceRun = false; // флаг - запущен ли из под службы или нет
 bool flagAutostartUTM = false; // флаг - идет автозапуск утм или нет
+bool flagStartUTM = false; // флаг - идет запуск утм
+bool flagStopUTM = false; // флаг - идет остановка утм
+bool flagCheckServices = false; // флаг, что идет получение статусов служб
 std::map<DWORD, DWORD> mapSessionIDProcessID; // для контроля входа выхода пользователей и для завершения процессов
 UINT WM_TASKBARCREATED; // для пользовательского сообщения о создании панели задач от explorer.exe
+UINT_PTR checkServiceTimer = 0; // таймер для сбора инфы о службах
+std::vector<std::string> vecPathService; // для путей до исполняющих файлов служб
+std::vector<int> vecUTMError; // для ошибок УТМ при проверке поля rsaError , 0 - не запущен, 1 - ошибок нет, 2 - ошибки есть
+
+// Иконки для листвью
+HICON hIconToken = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON6));
+HICON hIconServiceRun = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON4));
+HICON hIconServiceStop = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON5));
+HICON hIconServiceWarning = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICON1));
 
 // Хендлы виджетов
-HWND hWndMain, hListBoxTokensGlobal, hEditInfoTokens, hStatusBar, hProgressBar, hDlgReadersNoContext, hDlgInstallUTM;
+HWND hWndMain, hListBoxTokensGlobal, hEditInfoTokens, hStatusBar, hProgressBar, hDlgReadersNoContext, hDlgInstallUTM, hTabControl, hListBoxUTMServiceGlobal;
 
 // создание векторов с ид виджетов в окне установить утм
 std::vector<int> vecStaticUTM = { IDC_STATIC3, IDC_STATIC4, IDC_STATIC5, IDC_STATIC6, IDC_STATIC7, IDC_STATIC8,
@@ -389,20 +401,20 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     getVersionOS(dwMinorVersionOS);
 
     hWndMain = CreateWindowEx(0, szWindowClass, szTitle, WS_SYSMENU, x, y, 390, 560, nullptr, nullptr, hInstance, nullptr);
-    HWND hSeparator;
 
     // Если минор равен 1, это вин 7
     if (dwMinorVersionOS == 1)
     {
         // Создаем листбокс с токенами
-        hListBoxTokensGlobal = CreateWindowEx(0, "LISTBOX", "Tokens ListBox", WS_CHILD | LBS_STANDARD | WS_VISIBLE,
-            1, 1, 381, 240, hWndMain, (HMENU)MainWidgetId::LISTBOX_TOKENS, NULL, NULL);
+        hListBoxTokensGlobal = CreateWindowEx(0, WC_LISTVIEW, "Tokens ListBox", WS_VISIBLE | WS_BORDER | WS_CHILD | LVS_REPORT |
+            LVS_NOCOLUMNHEADER | LVS_SINGLESEL | LVS_SORTASCENDING, 1, 26, 381, 215, hWndMain, (HMENU)MainWidgetId::LISTVIEW_TOKENS, NULL, NULL);
 
-        // Сепаратор
-        hSeparator = CreateWindowEx(0, "Static", "", WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ, 1, 235, 381, 0, hWndMain, NULL, NULL, NULL);
+        // Создаем листбокс с утм и службами
+        hListBoxUTMServiceGlobal = CreateWindowEx(0, WC_LISTVIEW, "Tokens UTM Service", WS_VISIBLE | WS_BORDER | WS_CHILD | LVS_REPORT |
+            LVS_NOCOLUMNHEADER | LVS_SINGLESEL | LVS_SORTASCENDING, 1, 26, 381, 472, hWndMain, (HMENU)MainWidgetId::LISTVIEW_UTM_SERVICE, NULL, NULL);
 
         // Поле для информации о токене
-        hEditInfoTokens = CreateWindowEx(0, "Edit", 0, WS_CHILD | WS_VISIBLE | WS_BORDER | ES_READONLY | ES_MULTILINE | WS_VSCROLL, 1, 245, 381, 250, hWndMain, NULL, NULL, NULL);
+        hEditInfoTokens = CreateWindowEx(0, "Edit", 0, WS_CHILD | WS_VISIBLE | WS_BORDER | ES_READONLY | ES_MULTILINE | WS_VSCROLL, 1, 245, 381, 252, hWndMain, NULL, NULL, NULL);
 
         // Статусбар
         hStatusBar = CreateWindowEx(0, "Static", " ", WS_CHILD | WS_VISIBLE | SS_LEFT, 1, 498, 381, 20, hWndMain, NULL, NULL, NULL);
@@ -413,11 +425,12 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     else // иначе вин 10
     {
         // Создаем листбокс с токенами
-        hListBoxTokensGlobal = CreateWindowEx(0, "LISTBOX", "Tokens ListBox", WS_CHILD | LBS_STANDARD | WS_VISIBLE,
-            1, 1, 371, 240, hWndMain, (HMENU)MainWidgetId::LISTBOX_TOKENS, NULL, NULL);
+        hListBoxTokensGlobal = CreateWindowEx(0, WC_LISTVIEW, "Tokens ListBox", WS_VISIBLE | WS_BORDER | WS_CHILD | LVS_REPORT |
+            LVS_NOCOLUMNHEADER | LVS_SINGLESEL | LVS_SORTASCENDING, 1, 26, 371, 210, hWndMain, (HMENU)MainWidgetId::LISTVIEW_TOKENS, NULL, NULL);
 
-        // Сепаратор
-        hSeparator = CreateWindowEx(0, "Static", "", WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ, 1, 235, 371, 0, hWndMain, NULL, NULL, NULL);
+        // Создаем листбокс с утм и службами
+        hListBoxUTMServiceGlobal = CreateWindowEx(0, WC_LISTVIEW, "Tokens UTM Service", WS_VISIBLE | WS_BORDER | WS_CHILD | LVS_REPORT |
+            LVS_NOCOLUMNHEADER | LVS_SINGLESEL | LVS_SORTASCENDING, 1, 26, 371, 457, hWndMain, (HMENU)MainWidgetId::LISTVIEW_UTM_SERVICE, NULL, NULL);
 
         // Поле для информации о токене
         hEditInfoTokens = CreateWindowEx(0, "Edit", 0, WS_CHILD | WS_VISIBLE | WS_BORDER | ES_READONLY | ES_MULTILINE | WS_VSCROLL, 1, 245, 371, 238, hWndMain, NULL, NULL, NULL);
@@ -429,13 +442,31 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
         hProgressBar = CreateWindowEx(0, PROGRESS_CLASS, NULL, WS_CHILD | WS_VISIBLE | WS_BORDER | PBS_MARQUEE, 6, 215, 360, 30, hWndMain, NULL, NULL, NULL);
     }
 
-    if (!hWndMain || !hListBoxTokensGlobal || !hEditInfoTokens || !hSeparator || !hStatusBar || !hProgressBar)
+    // Иконки для листвью
+    HIMAGELIST hSmall = ImageList_Create(16, 16, ILC_COLOR32, 4, 0);
+    ImageList_AddIcon(hSmall, hIconToken);
+    ImageList_AddIcon(hSmall, hIconServiceRun);
+    ImageList_AddIcon(hSmall, hIconServiceStop);
+    ImageList_AddIcon(hSmall, hIconServiceWarning);
+    ListView_SetImageList(hListBoxTokensGlobal, hSmall, LVSIL_SMALL);
+    ListView_SetImageList(hListBoxUTMServiceGlobal, hSmall, LVSIL_SMALL);
+
+    CreateColumn(hListBoxTokensGlobal, 1, 0, 370);
+    CreateColumn(hListBoxUTMServiceGlobal, 1, 0, 370);
+    ListView_SetExtendedListViewStyle(hListBoxTokensGlobal, LVS_EX_FULLROWSELECT);
+    ListView_SetExtendedListViewStyle(hListBoxUTMServiceGlobal, LVS_EX_FULLROWSELECT | LVS_EX_INFOTIP);
+
+    checkServiceUTM(); // получаем инфу о утм и службах, заполняем листбокс
+    checkServiceTimer = SetTimer(hWndMain, TIMER_CHECK_SERVICE, 60000, NULL);
+
+    if (!hWndMain || !hListBoxTokensGlobal || !hEditInfoTokens || !hStatusBar || !hProgressBar || !hListBoxUTMServiceGlobal || !checkServiceTimer)
     {
         logger("Не удалось создать окно!", "ERROR");
         return FALSE;
     }
 
     ShowWindow(hProgressBar, SW_HIDE);
+    ShowWindow(hListBoxUTMServiceGlobal, SW_HIDE);
 
     // Установка шрифта
     HFONT font = CreateFont(
@@ -456,6 +487,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     SendMessage(hWndMain, WM_SETFONT, (WPARAM)font, TRUE);
     SendMessage(hListBoxTokensGlobal, WM_SETFONT, (WPARAM)font, TRUE);
+    SendMessage(hListBoxUTMServiceGlobal, WM_SETFONT, (WPARAM)font, TRUE);
     SendMessage(hEditInfoTokens, WM_SETFONT, (WPARAM)font, TRUE);
     SendMessage(hStatusBar, WM_SETFONT, (WPARAM)font, TRUE);
 
@@ -491,10 +523,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     switch (message)
     {
+        case WM_TIMER:
+        {
+            if (wParam == TIMER_CHECK_SERVICE)
+            {
+                std::thread thr(&checkServiceUTM);
+                thr.detach();
+            }
+
+            break;
+        }
+
         case WM_CREATE:
         {
             // Регистрация пользовательского сообщения о создании панели задач от explorer.exe
             WM_TASKBARCREATED = RegisterWindowMessage("TaskbarCreated");
+
+            OnCreate(hWnd, (CREATESTRUCT*)lParam); // создаем вкладки
 
             // Сбор данных
             workCollectDevice();
@@ -519,8 +564,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             int err = readConfigAutoStart(autostart);
             if (err == 1)
             {
-                logger("Не удалось прочитать конфиг! Код ошибки - " + std::to_string(GetLastError()), "ERROR");
-                break;
+                logger("Не удалось прочитать конфиг! Нет поля autostart. Код ошибки - " + std::to_string(GetLastError()), "ERROR");
             }
             if (autostart == "true")
             {
@@ -560,6 +604,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     thr.detach();
 
                     flagAutostartUTM = true;
+                    flagStartUTM = true;
                 }
             }
             else
@@ -606,6 +651,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
         }
         break;
+
         case WM_CTLCOLORSTATIC: // чтобы не активные поля не закрашивалось серым
         {
             if ((HWND)lParam == hEditInfoTokens)
@@ -746,42 +792,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                     break;
                 }
-
-                case MainWidgetId::LISTBOX_TOKENS:
-                {
-                    if (flagAutostartUTM)
-                    {
-                        MessageBox(hWnd, "Идет запуск УТМ, пожалуйста подождите...", "Внимание", MB_ICONINFORMATION);
-                        break;
-                    }
-
-                    if (HIWORD(wParam) == LBN_SELCHANGE) // если выбрали токен
-                    {
-                        // Получаем индекс токена
-                        int index = SendMessage(hListBoxTokensGlobal, LB_GETCURSEL, 0, 0); // получаем индекс выделенной строки
-                        if (indexToken == index) // если выделение одно и того же токена, не обрабатываем дальше
-                        {
-                            break;
-                        }
-                        indexToken = index;
-                        if (index == LB_ERR)
-                        {
-                            setStatusBar("Не удалось выделить токен!");
-                            logger("Не удалось выделить токен!", "ERROR");
-                            break;
-                        }
-
-                        // Открываем прогрессбар и блокируем главное окно
-                        ShowWindow(hProgressBar, SW_SHOW);
-                        SendMessage(hProgressBar, (UINT)PBM_SETMARQUEE, (WPARAM)1, NULL);
-                        EnableWindow(hWnd, FALSE);
-
-                        // читаем выбранный токен
-                        std::thread thr(&wraperReadDevice, index);
-                        thr.detach();
-                    }
-                }
-                break;
             }
 
             int wmId = LOWORD(wParam);
@@ -852,6 +862,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     break;
                 }
 
+                case ID_REREAD_SERVICES: // перечитать службы УТМ
+                {
+                    if (flagCheckServices == true) // если проверка уже идет прерываем
+                    {
+                        break;
+                    }
+
+                    flagCheckServices = true;
+
+                    // Открываем прогрессбар и блокируем главное окно
+                    ShowWindow(hProgressBar, SW_SHOW);
+                    SendMessage(hProgressBar, (UINT)PBM_SETMARQUEE, (WPARAM)1, NULL);
+                    EnableWindow(hWnd, FALSE);
+
+                    // Перечитываем службы УТМ
+                    std::thread thr(&checkServiceUTM);
+                    thr.detach();
+
+                    break;
+                }
+
                 case ID_REREAD_DEVICES: // перечитать устройства
                 {
                     if (flagAutostartUTM)
@@ -868,7 +899,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     // Сбор данных
                     indexToken = -1;
                     setStatusBar("Выполняется обновление устройств...");
-                    workCollectDevice();
+                    std::thread thr(&workCollectDevice);
+                    thr.detach();
                     SetWindowTextA(hEditInfoTokens, ""); // очищаем поле информации
                     break;
                 }
@@ -973,6 +1005,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     EnableWindow(hWnd, FALSE);
 
                     // запускаем утмы
+                    flagStartUTM = true;
                     std::thread thr(&startUTM);
                     thr.detach();
 
@@ -1014,6 +1047,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     EnableWindow(hWnd, FALSE);
 
                     // запускаем утмы
+                    flagStopUTM = true;
                     std::thread thr(&stopUTM);
                     thr.detach();
 
@@ -1128,6 +1162,83 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             break;
         }
+
+        // регулируем расположение вкладок
+        case WM_SIZE:
+        {
+            OnSize(hWnd, LOWORD(lParam), HIWORD(lParam), (UINT)wParam);
+            break;
+        }
+
+        // Обрабатываем переключение вкладки
+        // break в конце не нужен
+        case WM_NOTIFY:
+        {
+            if (((LPNMHDR)lParam)->hwndFrom == hListBoxTokensGlobal)
+            {
+                switch (((LPNMHDR)lParam)->code)
+                {
+                    case NM_CLICK:
+                    {
+                        if (flagAutostartUTM)
+                        {
+                            MessageBox(hWnd, "Идет запуск УТМ, пожалуйста подождите...", "Внимание", MB_ICONINFORMATION);
+                            break;
+                        }
+
+                        NM_LISTVIEW* lst = (NM_LISTVIEW*)lParam;
+
+                        // Если кликнули просто так, то ниче не делаем
+                        std::vector<CHAR> vec(MAX_PATH);
+                        ListView_GetItemText(hListBoxTokensGlobal, lst->iItem, lst->iSubItem, &vec.front(), MAX_PATH);
+                        std::string buff(&vec.front());
+                        if (buff.empty())
+                        {
+                            break;
+                        }
+
+                        // Открываем прогрессбар и блокируем главное окно
+                        ShowWindow(hProgressBar, SW_SHOW);
+                        SendMessage(hProgressBar, (UINT)PBM_SETMARQUEE, (WPARAM)1, NULL);
+                        EnableWindow(hWnd, FALSE);
+
+                        // читаем выбранный токен
+                        std::thread thr(&wraperReadDevice, lst->iItem);
+                        thr.detach();
+
+                        break;
+                    }
+                }
+            }
+
+            switch (((LPNMHDR)lParam)->code)
+            {
+                // подсказка в листвью с путем
+                case LVN_GETINFOTIP:
+                {
+                    LPNMLVGETINFOTIP GetInfoTip = (LPNMLVGETINFOTIP)lParam;
+                    strcpy(GetInfoTip->pszText, vecPathService[GetInfoTip->iItem].c_str());
+
+                    break;
+                }
+
+                // break в конце не нужен
+                case TCN_SELCHANGE:
+                {
+                    int tab = TabCtrl_GetCurSel(((LPNMHDR)lParam)->hwndFrom); // получаем номер активной вкладки
+                    // В зависимости от вкладки показываем нужные контролы
+                    if (tab == 0) // рутокены
+                    {
+                        showOrHideOption(0);
+                    }
+                    if (tab == 1) // службы утм
+                    {
+                        showOrHideOption(1);
+                    }
+                }
+            }
+        }
+
         default:
         {
             return DefWindowProc(hWnd, message, wParam, lParam);
@@ -1761,21 +1872,15 @@ int fillListBoxRutokens(std::vector<std::string> vecReader)
         return 1;
     }
 
-    // получаем индекс первого элемента
-    int topIndex = SendMessage(hListBoxTokensGlobal, LB_GETTOPINDEX, 0, 0);
-
-    // Удаляем все строки в листбоксе контактов
-    SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
+    // Удаляем все строки в листвью контактов
+    ListView_DeleteAllItems(hListBoxTokensGlobal);
 
     // Заполняем
-    for (std::string elem : vecReader)
+    for (int i = 0; i < vecReader.size(); ++i)
     {
-        std::string s = "      " + elem; // пробелы для красоты
-        SendMessage(hListBoxTokensGlobal, LB_ADDSTRING, 0, (LPARAM)s.c_str());
+        std::string s = "      " + vecReader[i]; // пробелы для красоты
+        CreateItem(hListBoxTokensGlobal, (CHAR*)s.c_str(), i, 0);
     }
-
-    // устанавливаем индекс первого элемента
-    SendMessage(hListBoxTokensGlobal, LB_SETTOPINDEX, topIndex, 0);
 
     return 0;
 }
@@ -1798,8 +1903,8 @@ int workCollectDevice()
         error = "Не удалось получить контекст смарткарт, код ошибки " + std::to_string(err);
         setStatusBar(error);
         logger(error, "ERROR");
-        // Очищаем листбокс
-        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
+        // Удаляем все строки в листвью контактов
+        ListView_DeleteAllItems(hListBoxTokensGlobal);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -1813,8 +1918,8 @@ int workCollectDevice()
         std::string error = "Не удалось получить серийные номера рутокенов, код ошибки " + std::to_string(err);
         setStatusBar(error);
         logger(error, "ERROR");
-        // Очищаем листбокс
-        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
+        // Удаляем все строки в листвью контактов
+        ListView_DeleteAllItems(hListBoxTokensGlobal);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -1825,14 +1930,11 @@ int workCollectDevice()
     err = getListDevice(vecRutokens, ctxCard);
     if (err == 1)
     {
-        // Удаляем все строки в листбоксе контактов
-        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
-
         error = "Не найдено подключенных смарткарт";
         setStatusBar(error);
         logger(error, "ERROR");
-        // Очищаем листбокс
-        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
+        // Удаляем все строки в листвью контактов
+        ListView_DeleteAllItems(hListBoxTokensGlobal);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -1843,8 +1945,8 @@ int workCollectDevice()
         error = "Не удалось получить список смарткарт, код ошибки " + std::to_string(err);
         setStatusBar(error);
         logger(error, "ERROR");
-        // Очищаем листбокс
-        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
+        // Удаляем все строки в листвью контактов
+        ListView_DeleteAllItems(hListBoxTokensGlobal);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -1858,8 +1960,8 @@ int workCollectDevice()
         error = "Не удалось получить атрибуты смарткарт, код ошибки " + std::to_string(err);
         setStatusBar(error);
         logger(error, "ERROR");
-        // Очищаем листбокс
-        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
+        // Удаляем все строки в листвью контактов
+        ListView_DeleteAllItems(hListBoxTokensGlobal);
         // Убираем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -1879,8 +1981,8 @@ int workCollectDevice()
         error = "Не удалось заполнить листбокс";
         setStatusBar(error);
         logger(error, "ERROR");
-        // Очищаем листбокс
-        SendMessage(hListBoxTokensGlobal, LB_RESETCONTENT, 0, 0);
+        // Удаляем все строки в листвью контактов
+        ListView_DeleteAllItems(hListBoxTokensGlobal);
     }
 
     // Убираем прогрессбар и разблокируем главное окно
@@ -2162,16 +2264,21 @@ int startUTM()
 
     std::string error;
     int err;
-    bool flagStartUTM = true;
 
     std::string countUTMstr;
     if (readConfigCountUTM(countUTMstr) == 1)
     {
         flagAutostartUTM = false;
+        flagStartUTM = false;
         error = "Чтение конфига завершилась ошибкой! Код ошибки - " + std::to_string(GetLastError());
         logger(error, "ERROR");
         MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
         setStatusBar(error);
+
+        // Сбор данных
+        workCollectDevice();
+        checkServiceUTM();
+
         // Скрываем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -2183,10 +2290,16 @@ int startUTM()
     if (readConfigNameAndReader(countUTM, vectorNameReaders, vectorAttrReaders, ports, serialNumbers) == 1)
     {
         flagAutostartUTM = false;
+        flagStartUTM = false;
         error = "Чтение конфига завершилась ошибкой! Код ошибки - " + std::to_string(GetLastError());
         logger(error, "ERROR");
         MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
         setStatusBar(error);
+
+        // Сбор данных
+        workCollectDevice();
+        checkServiceUTM();
+
         // Скрываем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -2196,10 +2309,16 @@ int startUTM()
     if (vecRutokens.size() < vectorNameReaders.size())
     {
         flagAutostartUTM = false;
+        flagStartUTM = false;
         error = "Активных токенов меньше, чем в конфиге.\nПереустановите УТМы, или добавьте активных токенов";
         logger(error, "ERROR");
         MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
         setStatusBar(error);
+
+        // Сбор данных
+        workCollectDevice();
+        checkServiceUTM();
+
         // Скрываем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -2223,10 +2342,16 @@ int startUTM()
     if (vecTempSerialNumber != serialNumbers)
     {
         flagAutostartUTM = false;
+        flagStartUTM = false;
         error = "Некоторые активные токены отсутсвуют в конфиге.\nПереустановите УТМы, или исправьте активные токены";
         logger(error, "ERROR");
         MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
         setStatusBar(error);
+
+        // Сбор данных
+        workCollectDevice();
+        checkServiceUTM();
+
         // Скрываем прогрессбар и разблокируем главное окно
         ShowWindow(hProgressBar, SW_HIDE);
         EnableWindow(hWndMain, TRUE);
@@ -2241,6 +2366,7 @@ int startUTM()
         if (err != 0)
         {
             flagAutostartUTM = false;
+            flagStartUTM = false;
             error = "Ошибка запуска службы Trasport! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
             logger(error, "ERROR");
             MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2249,6 +2375,11 @@ int startUTM()
             {
                 logger("Отмена изменений завершилась неудачей", "ERROR");
             }
+
+            // Сбор данных
+            workCollectDevice();
+            checkServiceUTM();
+
             // Скрываем прогрессбар и разблокируем главное окно
             ShowWindow(hProgressBar, SW_HIDE);
             EnableWindow(hWndMain, TRUE);
@@ -2259,10 +2390,11 @@ int startUTM()
         // Проверка работы УТМ (запрос на главную страницу)
         setStatusBar("Проверка работы УТМ 1 (запрос на главную страницу)");
         logger("Проверка работы УТМ 1 (запрос на главную страницу)", "INFO");
-        err = checkHomePageUTM(ports[0], flagStartUTM);
+        err = checkHomePageUTM(ports[0], flagStartUTM, DEFAULT_TIMEOUT);
         if (err != 0)
         {
             flagAutostartUTM = false;
+            flagStartUTM = false;
             error = "Не удалось проверить работу УТМ! Код ошибки - " + std::to_string(err) + "\nФункция завершилась по таймауту" + "\nБудет выполнена отмена изменений";
             logger(error, "ERROR");
             MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2271,6 +2403,11 @@ int startUTM()
             {
                 logger("Отмена изменений завершилась неудачей", "ERROR");
             }
+
+            // Сбор данных
+            workCollectDevice();
+            checkServiceUTM();
+
             // Скрываем прогрессбар и разблокируем главное окно
             ShowWindow(hProgressBar, SW_HIDE);
             EnableWindow(hWndMain, TRUE);
@@ -2309,6 +2446,7 @@ int startUTM()
             if (err != 0)
             {
                 flagAutostartUTM = false;
+                flagStartUTM = false;
                 error = "Удаление всех ридеров завершилось ошибкой! Код ошибки - " + std::to_string(err) + "\nБудет выполнена отмена изменений";
                 logger(error, "ERROR");
                 MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2317,6 +2455,11 @@ int startUTM()
                 {
                     logger("Отмена изменений завершилась неудачей", "ERROR");
                 }
+
+                // Сбор данных
+                workCollectDevice();
+                checkServiceUTM();
+
                 // Скрываем прогрессбар и разблокируем главное окно
                 ShowWindow(hProgressBar, SW_HIDE);
                 EnableWindow(hWndMain, TRUE);
@@ -2342,6 +2485,7 @@ int startUTM()
             if (err != 0)
             {
                 flagAutostartUTM = false;
+                flagStartUTM = false;
                 error = "Добавление ридера " + nameReader + " завершилось ошибкой! Код ошибки - " + std::to_string(err) + "\nБудет выполнена отмена изменений";
                 logger(error, "ERROR");
                 MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2350,6 +2494,11 @@ int startUTM()
                 {
                     logger("Отмена изменений завершилась неудачей", "ERROR");
                 }
+
+                // Сбор данных
+                workCollectDevice();
+                checkServiceUTM();
+
                 // Скрываем прогрессбар и разблокируем главное окно
                 ShowWindow(hProgressBar, SW_HIDE);
                 EnableWindow(hWndMain, TRUE);
@@ -2370,6 +2519,7 @@ int startUTM()
             if (err != 0)
             {
                 flagAutostartUTM = false;
+                flagStartUTM = false;
                 error = "Добавление ридера " + nameReader + " завершилось ошибкой! Код ошибки - " + std::to_string(err) + "\nБудет выполнена отмена изменений";
                 logger(error, "ERROR");
                 MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2378,6 +2528,11 @@ int startUTM()
                 {
                     logger("Отмена изменений завершилась неудачей", "ERROR");
                 }
+
+                // Сбор данных
+                workCollectDevice();
+                checkServiceUTM();
+
                 // Скрываем прогрессбар и разблокируем главное окно
                 ShowWindow(hProgressBar, SW_HIDE);
                 EnableWindow(hWndMain, TRUE);
@@ -2403,6 +2558,7 @@ int startUTM()
             if (err != 0)
             {
                 flagAutostartUTM = false;
+                flagStartUTM = false;
                 error = "Ошибка запуска службы Transport" + numberService + "! Код ошибки - " + std::to_string(GetLastError()) + "\nБудет выполнена отмена изменений";
                 logger(error, "ERROR");
                 MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2411,6 +2567,11 @@ int startUTM()
                 {
                     logger("Отмена изменений завершилась неудачей", "ERROR");
                 }
+
+                // Сбор данных
+                workCollectDevice();
+                checkServiceUTM();
+
                 // Скрываем прогрессбар и разблокируем главное окно
                 ShowWindow(hProgressBar, SW_HIDE);
                 EnableWindow(hWndMain, TRUE);
@@ -2422,10 +2583,11 @@ int startUTM()
             // проверка работы утм
             setStatusBar("Проверка работы УТМ " + numberService + " (запрос на главную страницу)");
             logger("Проверка работы УТМ " + numberService + " (запрос на главную страницу)", "INFO");
-            err = checkHomePageUTM(ports[i], flagStartUTM);
+            err = checkHomePageUTM(ports[i], flagStartUTM, DEFAULT_TIMEOUT);
             if (err != 0)
             {
                 flagAutostartUTM = false;
+                flagStartUTM = false;
                 error = "Не удалось проверить работу УТМ " + numberService + "! Код ошибки - " + std::to_string(err) + "\nФункция завершилась по таймауту" + "\nБудет выполнена отмена изменений";
                 logger(error, "ERROR");
                 MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2434,6 +2596,11 @@ int startUTM()
                 {
                     logger("Отмена изменений завершилась неудачей", "ERROR");
                 }
+
+                // Сбор данных
+                workCollectDevice();
+                checkServiceUTM();
+
                 // Скрываем прогрессбар и разблокируем главное окно
                 ShowWindow(hProgressBar, SW_HIDE);
                 EnableWindow(hWndMain, TRUE);
@@ -2444,9 +2611,11 @@ int startUTM()
     }
 
     flagAutostartUTM = false;
+    flagStartUTM = false;
 
     // Сбор данных
     workCollectDevice();
+    checkServiceUTM();
 
     // Скрываем прогрессбар и разблокируем главное окно
     ShowWindow(hProgressBar, SW_HIDE);
@@ -2512,6 +2681,7 @@ int stopUTM()
     int err = readConfigCountUTM(countUTMstr);
     if (err != 0)
     {
+        flagStopUTM = false;
         error = "Не удалось получить кол-во УТМ из конфига, код ошибки " + std::to_string(err);
         setStatusBar(error);
         logger(error, "ERROR");
@@ -2532,6 +2702,7 @@ int stopUTM()
             err = stopServiceUTM("Transport");
             if (err != 0)
             {
+                flagStopUTM = false;
                 error = "Не удалось остановить службу Transport, код ошибки " + std::to_string(err);
                 setStatusBar(error);
                 MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2548,6 +2719,7 @@ int stopUTM()
         err = stopServiceUTM("Transport" + std::to_string(i));
         if (err != 0)
         {
+            flagStopUTM = false;
             error = "Не удалось остановить службу Transport" + std::to_string(i) + ", код ошибки " + std::to_string(err);
             setStatusBar(error);
             MessageBox(hWndMain, error.c_str(), "Ошибка", MB_ICONERROR);
@@ -2559,6 +2731,10 @@ int stopUTM()
             return 1;
         }
     }
+
+    flagStopUTM = false;
+
+    checkServiceUTM();
 
     // Скрываем прогрессбар и разблокируем главное окно
     ShowWindow(hProgressBar, SW_HIDE);
@@ -2943,4 +3119,413 @@ int checkExplorerExe()
 
     WTSFreeMemory(pProcessInfo);
     return 0;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Создание вкладок
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+// создание окружения для вкладок
+void StartCommonControls(DWORD flags)
+{
+    INITCOMMONCONTROLSEX iccx;
+    iccx.dwSize = sizeof(INITCOMMONCONTROLSEX);
+    iccx.dwICC = flags;
+    InitCommonControlsEx(&iccx);
+}
+
+// Создание окна вкладок
+HWND CreateTab(const HWND hParent, const HINSTANCE hInst, DWORD dwStyle, const RECT& rc, const int id)
+{
+    dwStyle |= WS_CHILD | WS_VISIBLE;
+
+    return CreateWindowEx(0,                  //extended styles
+        WC_TABCONTROL,     //control 'class' name
+        0,                  //control caption
+        dwStyle,            //wnd style
+        rc.left,            //position: left
+        rc.top,             //position: top
+        rc.right,           //width
+        rc.bottom,          //height
+        hParent,            //parent window handle
+        (HMENU)id,          //control's ID
+        hInst,              //instance
+        0);                 //user defined info
+}
+
+// Добавление вкладок
+int InsertItem(HWND hTc, std::string txt, int item_index, int image_index, UINT mask)
+{
+    TCITEM tabPage = { 0 };
+
+    tabPage.mask = mask;
+    tabPage.pszText = (LPSTR)txt.c_str();
+    tabPage.cchTextMax = txt.length();
+    tabPage.iImage = image_index;
+    SendMessage(hTc, TCM_INSERTITEM, item_index, (LPARAM)&tabPage);
+
+    return 0;
+}
+
+// создание окна с вкладками
+int OnCreate(const HWND hwnd, CREATESTRUCT* cs)
+{
+    RECT rc = { 0,0,0,0 };
+    StartCommonControls(ICC_TAB_CLASSES);
+
+    hTabControl = CreateTab(hwnd, cs->hInstance, TCS_MULTILINE, rc, MainWidgetId::TAB_CONTOL);
+
+    // Сохраняем дескриптор управления вкладкой как пользовательские данные, связанные с
+    // родительским окном, чтобы его можно было извлечь для последующего использования
+    SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)hTabControl);
+
+    InsertItem(hTabControl, "Рутокены", 0, 0);
+    InsertItem(hTabControl, "УТМы и службы", 1, 1);
+
+    // Установка шрифта
+    HFONT font = CreateFont(
+        16,						// nHeight
+        0,						// nWidth
+        0,						// nEscapement
+        0,						// nOrientation
+        FW_NORMAL,				// nWeight
+        FALSE,					// bItalic
+        FALSE,					// bUnderline
+        FALSE,					// cStrikeOut
+        DEFAULT_CHARSET,		    // nCharSet
+        OUT_DEFAULT_PRECIS,		// nOutPrecision
+        CLIP_DEFAULT_PRECIS,	    // nClipPrecision
+        DEFAULT_QUALITY,		    // nQuality
+        VARIABLE_PITCH,			// nPitchAndFamily
+        "Tahoma");				// lpszFacename
+
+    SendMessage(hTabControl, WM_SETFONT, (WPARAM)font, TRUE);
+
+    return 0;
+}
+
+// регулировка размера и расположения вкладок
+void OnSize(const HWND hwnd, int cx, int cy, UINT flags)
+{
+    // Получаем дескриптор управления заголовком, который ранее был сохранен в пользовательском
+    // данные, связанные с родительским окном.
+    HWND hTabCntrl = (HWND)(LONG_PTR)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+
+    MoveWindow(hTabCntrl, 1, 1, cx - 1, cy - 18, TRUE);
+}
+
+// Показать/скрыть виджеты в определенной влкадке
+int showOrHideOption(int tab)
+{
+    switch (tab)
+    {
+    case 0: // токены
+    {
+        ShowWindow(hListBoxTokensGlobal, SW_NORMAL);
+        ShowWindow(hEditInfoTokens, SW_NORMAL);
+        
+        ShowWindow(hListBoxUTMServiceGlobal, SW_HIDE);
+
+        break;
+    }
+    case 1: // утм и службы
+    {
+        ShowWindow(hListBoxUTMServiceGlobal, SW_NORMAL);
+
+        ShowWindow(hListBoxTokensGlobal, SW_HIDE);
+        ShowWindow(hEditInfoTokens, SW_HIDE);
+
+        break;
+    }
+    default:
+        break;
+    }
+
+    return 0;
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// проверка на наличие служб утм по кол ву из конфига, и запрос на главную страницу
+int checkServiceUTM()
+{
+    DWORD waitMutex = WaitForSingleObject(hMutex, 1000);
+    if (waitMutex == WAIT_TIMEOUT)
+    {
+        setStatusBar("Мьютекс не освобожден, проверка служб УТМ прервана");
+        logger("Мьютекс не освобожден, проверка служб УТМ прервана", "INFO");
+        if (flagAutostartUTM == false && flagStartUTM == false && flagStopUTM == false) // при запуске и остановке утмов прогрессбар не убирать
+        {
+            // Убираем прогрессбар и разблокируем главное окно
+            ShowWindow(hProgressBar, SW_HIDE);
+            EnableWindow(hWndMain, TRUE);
+        }
+        return 0;
+    }
+
+    logger("Получение информации о службах УТМ", "INFO");
+
+    // получаем кол во утм из конфига
+    std::string countUTM;
+    if (readConfigCountUTM(countUTM) == 1)
+    {
+        logger("Ошибка чтения конфига при проверке наличия служб УТМ - " + std::to_string(GetLastError()), "ERROR");
+        return 1;
+    }
+    std::vector<std::string> vecUTMService;
+    int intCountUTM = atoi(countUTM.c_str());
+    for (int i = 1; i <= intCountUTM; ++i)
+    {
+        if (i == 1)
+        {
+            vecUTMService.push_back("Transport");
+        }
+        else
+        {
+            vecUTMService.push_back("Transport" + std::to_string(i));
+        }
+    }
+
+    // получаем порты УТМ из конфига
+    std::vector<std::string> ports;
+    if (readConfigPorts(intCountUTM, ports) == 1)
+    {
+        logger("Ошибка чтения конфига при проверке наличия служб УТМ - " + std::to_string(GetLastError()), "ERROR");
+        return 1;
+    }
+
+    // проверка наличие служб УТМ и их статус
+    std::vector<std::string> vecServiceStatus;
+    if (getServiceList(vecUTMService, vecServiceStatus) == 1)
+    {
+        logger("Ошибка получения статуса служб при проверке наличия служб УТМ - " + std::to_string(GetLastError()), "ERROR");
+        return 1;
+    }
+
+    // проверка ошибок УТМ
+    // 0 - не запущен, 1 - ошибок нет, 2 - ошибки есть
+    std::vector<int> vecUTMError;
+    int UTMError = 0;
+    int countPort = ports.size() - 1; // потому что массив портов развернут в другую сторону
+    for (int i = 0; i < vecServiceStatus.size(); ++i)
+    {
+        if (vecServiceStatus[i].find("Запущена") != std::string::npos)
+        {
+            if (checkUTMError(UTMError, ports[countPort]) != 0)
+            {
+                logger("Ошибка проверки ошибок УТМ при проверке наличия служб УТМ - " + std::to_string(GetLastError()), "ERROR");
+                return 1;
+            }
+            vecUTMError.push_back(UTMError);
+        }
+        else
+        {
+            UTMError = 0;
+            vecUTMError.push_back(UTMError);
+        }
+        --countPort;
+    }
+
+
+    // заполняем листбокс утм и службы
+    if (fillListBoxUTMService(vecServiceStatus, vecUTMError) == 1)
+    {
+        logger("Ошибка заполнения листбокса при проверке наличия служб УТМ - вектор vecServiceStatus пуст", "ERROR");
+        // Удаляем все строки в листвью контактов
+        ListView_DeleteAllItems(hListBoxUTMServiceGlobal);
+
+        return 1;
+    }
+
+    logger("Получение информации о службах УТМ успешно завершено", "INFO");
+
+    if (flagAutostartUTM == false && flagStartUTM == false && flagStopUTM == false) // при запуске и остановке утмов прогрессбар не убирать
+    {
+        // Убираем прогрессбар и разблокируем главное окно
+        ShowWindow(hProgressBar, SW_HIDE);
+        EnableWindow(hWndMain, TRUE);
+    }
+
+    flagCheckServices = false;
+    ReleaseMutex(hMutex);
+
+    return 0;
+}
+
+// получение списка всех служб
+int getServiceList(std::vector<std::string> vecUTMService, std::vector<std::string>& vecServiceStatus)
+{
+    SC_HANDLE hHandle = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+    if (!hHandle)
+    {
+        logger("Ошибка OpenSCManager - " + std::to_string(GetLastError()), "ERROR");
+        return 1;
+    }
+
+    vecPathService.clear();
+
+    DWORD dwBytesNeeded = 0;
+    DWORD dwServicesReturned = 0;
+    DWORD dwResumedHandle = 0;
+
+    // Выясняем, какой нужен буффер для информации
+    BOOL retVal = EnumServicesStatus(hHandle, SERVICE_WIN32, SERVICE_STATE_ALL,
+        NULL, 0, &dwBytesNeeded, &dwServicesReturned, &dwResumedHandle);
+    if (retVal == 0)
+    {
+        if (GetLastError() != ERROR_MORE_DATA)
+        {
+            logger("Ошибка EnumServicesStatus с NULL- " + std::to_string(GetLastError()), "ERROR");
+        }
+        // Делаем буффер и получаем информацию из структур
+        else
+        {
+            DWORD dwBytesNeeded2 = 0;
+            LPQUERY_SERVICE_CONFIG lpsc = { 0 };
+            LPENUM_SERVICE_STATUS pServices = { 0 };
+            pServices = new ENUM_SERVICE_STATUS[dwBytesNeeded];
+            if (EnumServicesStatus(hHandle, SERVICE_WIN32, SERVICE_STATE_ALL,
+                pServices, dwBytesNeeded, &dwBytesNeeded2, &dwServicesReturned, &dwResumedHandle) == 0)
+            {
+                logger("Ошибка EnumServicesStatus - " + std::to_string(GetLastError()), "ERROR");
+            }
+            else
+            {
+                for (std::string elem : vecUTMService)
+                {
+                    for (DWORD i = 0; i < dwServicesReturned; ++i)
+                    {
+                        if (strcmp(elem.c_str(), (pServices + i)->lpDisplayName) == 0)
+                        {
+                            std::string str;
+
+                            SC_HANDLE service = OpenService(hHandle, (pServices + i)->lpDisplayName, SC_MANAGER_ALL_ACCESS);
+                            if (service == NULL)
+                            {
+                                logger("Ошибка OpenService - " + std::to_string(GetLastError()), "ERROR");
+                                vecPathService.push_back("Путь не доступен");
+                            }
+
+                            // Выясняем, какой нужен буффер для информации
+                            dwBytesNeeded = 0;
+                            if (QueryServiceConfig(service, NULL, 0, &dwBytesNeeded) == 0)
+                            {
+                                if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+                                {
+                                    logger("Ошибка QueryServiceConfig с NULL- " + std::to_string(GetLastError()), "ERROR");
+                                    vecPathService.push_back("Путь не доступен");
+                                }
+                            }
+                            // Делаем буффер и получаем информацию из структур
+                            lpsc = new QUERY_SERVICE_CONFIG[sizeof(QUERY_SERVICE_CONFIG) + dwBytesNeeded];
+                            dwBytesNeeded2 = 0;
+                            if (QueryServiceConfig(service, lpsc, dwBytesNeeded, &dwBytesNeeded2) == 0)
+                            {
+                                logger("Ошибка QueryServiceConfig - " + std::to_string(GetLastError()), "ERROR");
+                                str += "Путь не доступен - ";
+                            }
+                            vecPathService.push_back(std::string(lpsc->lpBinaryPathName));
+
+                            str += (pServices + i)->lpDisplayName;
+                            if ((pServices + i)->ServiceStatus.dwCurrentState == 4)
+                            {
+                                str += " - Запущена";
+                            }
+                            else
+                            {
+                                str += " - Остановлена";
+                            }
+                            vecServiceStatus.push_back(str);
+                            break;
+                        }
+                    }
+                }
+            }
+            delete[] lpsc;
+            delete[] pServices;
+            pServices = NULL;
+        }
+    }
+    if (!CloseServiceHandle(hHandle))
+    {
+        logger("Ошибка CloseServiceHandle - " + std::to_string(GetLastError()), "ERROR");
+        return 1;
+    }
+    
+    return 0;
+}
+
+// заполнение листбокса утм и службы
+int fillListBoxUTMService(std::vector<std::string> vecServiceStatus, std::vector<int> vecUTMError)
+{
+    if (vecServiceStatus.empty())
+    {
+        return 1;
+    }
+
+    //EnableWindow(hListBoxUTMServiceGlobal, TRUE);
+
+    // Удаляем все строки в листвью контактов
+    ListView_DeleteAllItems(hListBoxUTMServiceGlobal);
+
+    // Заполняем
+    std::string str;
+    for (int i = 0; i < vecServiceStatus.size(); ++i)
+    {
+        if (vecServiceStatus[i].find("Запущена") != std::string::npos) // для подбора картинок
+        {
+            if (vecUTMError[i] == 1)
+            {
+                str = "      " + vecServiceStatus[i] + " - Ошибок нет"; // пробелы для красоты
+                CreateItem(hListBoxUTMServiceGlobal, (CHAR*)str.c_str(), i, 1);
+            }
+            else
+            {
+                str = "      " + vecServiceStatus[i] + " - Ошибка ключа"; // пробелы для красоты
+                CreateItem(hListBoxUTMServiceGlobal, (CHAR*)str.c_str(), i, 3);
+            }
+        }
+        else
+        {
+            str = "      " + vecServiceStatus[i]; // пробелы для красоты
+            CreateItem(hListBoxUTMServiceGlobal, (CHAR*)str.c_str(), i, 2);
+        }
+    }
+
+    //EnableWindow(hListBoxUTMServiceGlobal, FALSE);
+
+    return 0;
+}
+
+// создание колонки в листвью
+int CreateColumn(HWND hwndLV, int iCol, CHAR* Text, int iWidth)
+{
+    LVCOLUMN lvc;
+
+    lvc.mask = LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM;
+    lvc.fmt = LVCFMT_LEFT;
+    lvc.cx = iWidth;
+    lvc.pszText = Text;
+    lvc.iSubItem = iCol;
+    return ListView_InsertColumn(hwndLV, iCol, &lvc);
+}
+
+// создание элемента в листвью
+int CreateItem(HWND hwndList, CHAR* text, int index, int status)
+{
+    LVITEM lvi = { 0 };
+    int res;
+
+    // Initialize LVITEM members that are common to all items. 
+    lvi.mask = LVIF_TEXT | LVIF_PARAM | LVIF_IMAGE;
+    lvi.iItem = index;
+    lvi.pszText = text;
+    lvi.iImage = status; // индекс картинки в списке hSmall
+    lvi.lParam = 0;
+    res = ListView_InsertItem(hwndList, &lvi);
+
+    if (res >= 0)
+    {
+        ListView_SetItemText(hwndList, res, 0, text);
+    }
+
+    return res;
 }
