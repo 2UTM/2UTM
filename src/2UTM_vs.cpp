@@ -1888,6 +1888,7 @@ int fillListBoxRutokens(std::vector<std::string> vecReader)
 // функция, объединяющая получение устройств
 int workCollectDevice()
 {
+    logger("Выполняется обновление устройств...", "INFO");
     setStatusBar("Выполняется обновление устройств...");
 
     vecAttrRutokens.clear();
@@ -1897,6 +1898,7 @@ int workCollectDevice()
     std::string error;
 
     // Получаем контекст смарткарт
+    logger("Получаем контекст смарт карт...", "INFO");
     int err = getContextCard(ctxCard);
     if (err != 0)
     {
@@ -1912,6 +1914,7 @@ int workCollectDevice()
     }
 
     // Получаем все серийные номера
+    logger("Получаем серийные номера смарт карт...", "INFO");
     err = getSerialNumberAllDevices(vecRutokenSerialNumber);
     if (err != 0)
     {
@@ -1927,6 +1930,7 @@ int workCollectDevice()
     }
 
     // Получаем список ридеров
+    logger("Получаем список ридеров смарт карт...", "INFO");
     err = getListDevice(vecRutokens, ctxCard);
     if (err == 1)
     {
@@ -1954,6 +1958,7 @@ int workCollectDevice()
     }
 
     // Получаем атрибуты ридеров
+    logger("Получаем список атрибутов ридеров смарт карт...", "INFO");
     err = getAttrReader(vecAttrRutokens, ctxCard, vecRutokens);
     if (err != 0)
     {
@@ -3267,7 +3272,7 @@ int checkServiceUTM()
     std::string countUTM;
     if (readConfigCountUTM(countUTM) == 1)
     {
-        logger("Ошибка чтения конфига при проверке наличия служб УТМ - " + std::to_string(GetLastError()), "ERROR");
+        logger("Ошибка чтения конфига при проверке кол во УТМ - " + std::to_string(GetLastError()), "ERROR");
         return 1;
     }
     std::vector<std::string> vecUTMService;
@@ -3288,7 +3293,7 @@ int checkServiceUTM()
     std::vector<std::string> ports;
     if (readConfigPorts(intCountUTM, ports) == 1)
     {
-        logger("Ошибка чтения конфига при проверке наличия служб УТМ - " + std::to_string(GetLastError()), "ERROR");
+        logger("Ошибка чтения конфига при проверке портов УТМ - " + std::to_string(GetLastError()), "ERROR");
         return 1;
     }
 
